@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Env & secrets — NEVER commit credentials or generated maps
+.env
+.env.*
+*.tfstate
+*.tfstate.backup
+*-map.json
+*.kumomiru.json
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
