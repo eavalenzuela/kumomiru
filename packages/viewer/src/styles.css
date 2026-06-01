@@ -1,0 +1,179 @@
+:root {
+  --bg: #f8fafc;
+  --panel: #ffffff;
+  --border: #e2e8f0;
+  --text: #0f172a;
+  --muted: #64748b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.meta {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.graph-canvas {
+  flex: 1;
+  min-width: 0;
+  background:
+    radial-gradient(circle at 1px 1px, #e2e8f0 1px, transparent 0) 0 0 / 24px
+    24px;
+}
+
+.sidebar {
+  width: 320px;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.sidebar h2 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* Lens toggle */
+.lens-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.lens-toggle button {
+  border: none;
+  background: var(--panel);
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.lens-toggle button.active {
+  background: #1e293b;
+  color: #fff;
+}
+
+/* Findings */
+.findings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.finding {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.finding:hover {
+  border-color: #cbd5e1;
+}
+
+.sev-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  height: fit-content;
+  color: #fff;
+}
+
+.sev-critical .sev-tag {
+  background: #b91c1c;
+}
+.sev-high .sev-tag {
+  background: #ea580c;
+}
+.sev-medium .sev-tag {
+  background: #ca8a04;
+}
+.sev-low .sev-tag {
+  background: #2563eb;
+}
+.sev-info .sev-tag {
+  background: #64748b;
+}
+
+.finding-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.finding-detail {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.findings-empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Loading / error states */
+.app-state {
+  padding: 40px;
+}
+
+.app-state .error {
+  color: #b91c1c;
+}
+
+.app-state .hint {
+  color: var(--muted);
+}
