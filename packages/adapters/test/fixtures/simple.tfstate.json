@@ -1,0 +1,108 @@
+{
+  "version": 4,
+  "terraform_version": "1.7.0",
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "aws_vpc",
+      "name": "main",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "attributes": {
+            "arn": "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-0a1b2c3d",
+            "id": "vpc-0a1b2c3d",
+            "cidr_block": "10.0.0.0/16",
+            "tags": { "Name": "main-vpc" }
+          }
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_subnet",
+      "name": "public",
+      "instances": [
+        {
+          "attributes": {
+            "arn": "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-public1",
+            "id": "subnet-public1",
+            "vpc_id": "vpc-0a1b2c3d",
+            "cidr_block": "10.0.1.0/24",
+            "availability_zone": "us-east-1a",
+            "map_public_ip_on_launch": true,
+            "tags": { "Name": "public-1a" }
+          }
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_internet_gateway",
+      "name": "gw",
+      "instances": [
+        {
+          "attributes": {
+            "arn": "arn:aws:ec2:us-east-1:123456789012:internet-gateway/igw-00112233",
+            "id": "igw-00112233",
+            "vpc_id": "vpc-0a1b2c3d",
+            "tags": { "Name": "main-igw" }
+          }
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_security_group",
+      "name": "web",
+      "instances": [
+        {
+          "attributes": {
+            "arn": "arn:aws:ec2:us-east-1:123456789012:security-group/sg-web001",
+            "id": "sg-web001",
+            "name": "web-sg",
+            "vpc_id": "vpc-0a1b2c3d"
+          }
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "web",
+      "instances": [
+        {
+          "attributes": {
+            "arn": "arn:aws:ec2:us-east-1:123456789012:instance/i-0web00001",
+            "id": "i-0web00001",
+            "instance_type": "t3.small",
+            "subnet_id": "subnet-public1",
+            "public_ip": "203.0.113.10",
+            "vpc_security_group_ids": ["sg-web001"],
+            "tags": { "Name": "web-server" }
+          }
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_role",
+      "name": "web",
+      "instances": [
+        {
+          "attributes": {
+            "arn": "arn:aws:iam::123456789012:role/web-instance-role",
+            "id": "web-instance-role",
+            "name": "web-instance-role"
+          }
+        }
+      ]
+    },
+    {
+      "mode": "data",
+      "type": "aws_caller_identity",
+      "name": "current",
+      "instances": [{ "attributes": { "account_id": "123456789012" } }]
+    }
+  ]
+}
