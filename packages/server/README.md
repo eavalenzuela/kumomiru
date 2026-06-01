@@ -20,6 +20,12 @@ logs.
 | GET | `/health` | Liveness check. |
 | GET | `/sample` | The hand-authored sample graph — zero-setup data source for the viewer. |
 | POST | `/map/terraform` | Body = parsed `.tfstate` JSON → normalized `Graph`. `400` on invalid state, `422` if the built graph fails referential integrity. |
+| POST | `/map/live` | Body = `{ accessKeyId, secretAccessKey, sessionToken?, region }` → live read-only AWS discovery → `Graph`. Credentials are used in-memory for one run and scrubbed. `400` invalid body, `422` integrity, `502` discovery failure. |
+
+The live route's discovery client is injectable (`buildApp({ discoveryClientFactory })`)
+so it can be tested with a fake — no AWS or credentials needed. The real
+SDK-backed client (`src/aws/sdkClient.ts`) is the only place the AWS SDK is used,
+and every call is read-only.
 
 ## Run
 

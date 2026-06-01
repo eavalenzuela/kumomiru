@@ -1,51 +1,11 @@
 import type { CloudNode, CloudEdge, Graph } from "@kumomiru/graph";
 import type { Adapter } from "../contract.js";
+import { Containers } from "../common/containers.js";
 import { TfStateSchema, type TfState } from "./state-schema.js";
 import { NODE_MAPPINGS, regionAccountFromAttrs } from "./mappings.js";
 
 const SOURCE = "terraform-state";
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
-
-/**
- * Builds container nodes (account, region) on demand and dedupes them, so the
- * containment chain account -> region -> resource always exists even though
- * Terraform state has no explicit account/region resources.
- */
-class Containers {
-  readonly nodes = new Map<string, CloudNode>();
-
-  account(account: string): string {
-    const id = `aws::account::${account}`;
-    if (!this.nodes.has(id)) {
-      this.nodes.set(id, {
-        id,
-        type: "aws::account",
-        name: account,
-        account,
-        tags: {},
-        attributes: {},
-      });
-    }
-    return id;
-  }
-
-  region(account: string, region: string): string {
-    const id = `aws::region::${account}::${region}`;
-    if (!this.nodes.has(id)) {
-      this.nodes.set(id, {
-        id,
-        type: "aws::region",
-        name: region,
-        account,
-        region,
-        parent: this.account(account),
-        tags: {},
-        attributes: {},
-      });
-    }
-    return id;
-  }
-}
 
 interface Built {
   node: CloudNode;

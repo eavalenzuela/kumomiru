@@ -25,6 +25,34 @@ import { terraformAdapter } from "@kumomiru/adapters";
 const graph = terraformAdapter.toGraph(JSON.parse(tfstateJson));
 ```
 
+## Live AWS adapter
+
+Live read-only discovery, with credentials handled in-memory for one run.
+
+- **Credential broker** (`aws-live/credentials.ts`) — borrows credentials for a
+  single run via `use(fn)` and scrubs them in a `finally` block; a spent broker
+  refuses reuse. Prefers short-lived STS sessions (`sessionToken`).
+- **`DiscoveryClient`** (`aws-live/client.ts`) — a narrow, read-only interface
+  describing exactly the data discovery needs. The graph-building logic depends
+  only on this, so it is unit-testable with a fake and the AWS SDK is **not** a
+  dependency of this package (the server provides the SDK-backed implementation).
+- **`discoverGraph(client)`** (`aws-live/discover.ts`) — normalizes the
+  discovered resources into a `Graph`: containment, network edges (IGW, SG
+  membership, internet-facing ingress), and the assume-role IAM graph
+  (external/other-account trust raises a critical finding).
+- **Sanitization layer** (`common/sanitize.ts`) — scans user-data / env vars for
+  secret material, redacts to `{ secretPresent, kind }` markers, raises
+  `plaintext-secret` findings. Secrets Manager secrets are listed, never resolved.
+
+```ts
+import { runLiveDiscovery } from "@kumomiru/adapters";
+// makeClient: an SDK-backed DiscoveryClient factory (provided by the server).
+const graph = await runLiveDiscovery(creds, makeClient); // creds scrubbed after
+```
+
+See [`docs/credentials-and-secrets.md`](../../docs/credentials-and-secrets.md)
+and [`docs/least-privilege-policy.json`](../../docs/least-privilege-policy.json).
+
 ### Develop
 
 ```sh

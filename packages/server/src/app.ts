@@ -1,17 +1,26 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import { terraformAdapter } from "@kumomiru/adapters";
+import {
+  terraformAdapter,
+  type DiscoveryClientFactory,
+} from "@kumomiru/adapters";
 import {
   sampleGraph,
   checkReferentialIntegrity,
   type Graph,
 } from "@kumomiru/graph";
 import { REDACT_PATHS } from "./redact.js";
+import { registerLiveRoute } from "./routes/live.js";
 
 export interface BuildAppOptions {
   /** Pass false in tests to silence logging. */
   logger?: boolean;
   /** Cap on accepted request body size (bytes). Exports can be large. */
   bodyLimit?: number;
+  /**
+   * Override the discovery-client factory for /map/live. Defaults to the real
+   * SDK-backed client; tests inject a fake so no AWS/credentials are needed.
+   */
+  discoveryClientFactory?: DiscoveryClientFactory;
 }
 
 /**
@@ -64,6 +73,10 @@ export function buildApp(opts: BuildAppOptions = {}): FastifyInstance {
 
     return graph;
   });
+
+  // POST /map/live — live read-only AWS discovery (in-memory creds, dropped
+  // after the run).
+  registerLiveRoute(app, opts.discoveryClientFactory);
 
   return app;
 }
