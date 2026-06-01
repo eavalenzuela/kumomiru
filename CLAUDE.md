@@ -1,0 +1,39 @@
+# CLAUDE.md
+
+Guidance for Claude Code when working in this repo.
+
+## Tool usage discipline
+
+- **Never batch a `Write`/`Edit` in the same parallel tool block as a `Bash`
+  call.** When any one call in a parallel block errors, the harness cancels all
+  its siblings — so a failing Bash probe silently throws away queued file
+  writes. Run file edits and shell commands in separate, sequential steps.
+- **Keep Bash commands single-purpose.** Do not chain many actions with
+  `&&`/`;` into one mega-command. If an early link fails, the whole thing aborts
+  and the output is hard to attribute. One command, one job.
+- Don't bundle a "probe" (version check, existence test) with real work in the
+  same command. Probe first, read the result, then act.
+
+## Toolchain
+
+- Node is **v20** (not 22); npm only by default. pnpm is **not** global and
+  corepack can't symlink into `/usr/bin`. pnpm 9.15.0 lives in `~/.local/bin`
+  (installed via `corepack enable --install-directory ~/.local/bin pnpm`).
+  Prefix shell calls that use pnpm with `export PATH="$HOME/.local/bin:$PATH"`.
+- Shell env (including `cd` and exports) does **not** persist between Bash tool
+  calls. Use absolute paths; re-export PATH each call.
+- `@kumomiru/graph` must be **built** (`dist/`) before packages that depend on
+  it typecheck/build, since they resolve it via published `dist` types. Build in
+  dependency order: graph → adapters → server.
+- `noUnusedLocals`/`noUnusedParameters` are effectively on (strict) — keep
+  locals used or prefix intentionally-unused params with `_`.
+
+## Project
+
+kumomiru — public cloud environment mapper/visualizer. See `DESIGN.md` for the
+full design. pnpm monorepo under `packages/`:
+
+- `@kumomiru/graph` — the normalized graph spine (Zod schema = source of truth;
+  types via `z.infer`).
+- `@kumomiru/adapters` — ingestion adapters (terraform-state first).
+- `@kumomiru/server` — Fastify API; never persists credentials.

@@ -1,0 +1,37 @@
+{
+  "version": 4,
+  "terraform_version": "1.7.0",
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "aws_vpc",
+      "name": "main",
+      "instances": [
+        {
+          "attributes": {
+            "arn": "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-0a1b2c3d",
+            "id": "vpc-0a1b2c3d",
+            "cidr_block": "10.0.0.0/16",
+            "tags": { "Name": "main-vpc" }
+          }
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_subnet",
+      "name": "public",
+      "instances": [
+        {
+          "attributes": {
+            "arn": "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-public1",
+            "id": "subnet-public1",
+            "vpc_id": "vpc-0a1b2c3d",
+            "cidr_block": "10.0.1.0/24",
+            "tags": { "Name": "public-1a" }
+          }
+        }
+      ]
+    }
+  ]
+}

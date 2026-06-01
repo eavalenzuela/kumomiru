@@ -1,0 +1,26 @@
+{
+  "name": "@kumomiru/server",
+  "version": "0.0.0",
+  "description": "Self-hosted API: turns exports (and later live creds) into a Graph",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "test": "node --test --import tsx ./test/*.test.ts"
+  },
+  "dependencies": {
+    "@kumomiru/adapters": "workspace:*",
+    "@kumomiru/graph": "workspace:*",
+    "fastify": "^5.1.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
