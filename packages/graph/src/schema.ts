@@ -1,0 +1,89 @@
+import { z } from "zod";
+
+/**
+ * The normalized cloud graph — runtime schema (source of truth).
+ *
+ * Every ingestion adapter (Terraform state, AWS Config, live AWS API) and every
+ * analysis pass (IAM reachability, secret detection) produces data validated by
+ * these schemas. The TypeScript types in `types.ts` are derived from here via
+ * `z.infer`, so the static and runtime views can never drift.
+ */
+
+/** The three lenses are edge subsets over one shared node set. */
+export const LENSES = ["network", "iam", "dataflow"] as const;
+export const LensSchema = z.enum(LENSES);
+
+export const SEVERITIES = [
+  "info",
+  "low",
+  "medium",
+  "high",
+  "critical",
+] as const;
+export const SeveritySchema = z.enum(SEVERITIES);
+
+/**
+ * A resource. Containment is expressed with `parent`, which drives Cytoscape
+ * compound nodes: account -> region -> VPC -> AZ -> subnet -> resource.
+ *
+ * `attributes` is always sanitized — raw secret values are never stored here;
+ * the sanitization layer replaces them with `{ secretPresent: true, ... }`.
+ */
+export const CloudNodeSchema = z.object({
+  /** ARN or other stable URN. */
+  id: z.string().min(1),
+  /** Namespaced type, e.g. "aws::ec2::instance". */
+  type: z.string().min(1),
+  name: z.string(),
+  account: z.string(),
+  region: z.string().optional(),
+  /** id of the containing node, if any. */
+  parent: z.string().optional(),
+  tags: z.record(z.string()).default({}),
+  attributes: z.record(z.unknown()).default({}),
+});
+
+/**
+ * A relationship. `lens` is what powers the viewer's lens toggle — switching a
+ * lens is just filtering edges by this field.
+ */
+export const CloudEdgeSchema = z.object({
+  id: z.string().min(1),
+  source: z.string().min(1),
+  target: z.string().min(1),
+  /** e.g. contains | routes-to | can-assume | allows-ingress | reads-from */
+  relationship: z.string().min(1),
+  lens: LensSchema,
+  attributes: z.record(z.unknown()).default({}),
+});
+
+/**
+ * A security observation surfaced to the user. Produced by the sanitization
+ * layer ("plaintext secret detected") and later by the IAM pass
+ * ("external principal can assume admin").
+ */
+export const FindingSchema = z.object({
+  id: z.string().min(1),
+  severity: SeveritySchema,
+  /** e.g. "plaintext-secret" | "external-can-assume" */
+  kind: z.string().min(1),
+  /** The resource this finding is about, if applicable. */
+  nodeId: z.string().optional(),
+  title: z.string(),
+  detail: z.string(),
+});
+
+export const GraphMetaSchema = z.object({
+  /** ISO 8601 timestamp of when the graph was generated. */
+  generatedAt: z.string(),
+  /** What produced it, e.g. "terraform-state" | "aws-live" | "sample". */
+  source: z.string(),
+  provider: z.literal("aws"),
+});
+
+export const GraphSchema = z.object({
+  nodes: z.array(CloudNodeSchema),
+  edges: z.array(CloudEdgeSchema),
+  findings: z.array(FindingSchema).default([]),
+  meta: GraphMetaSchema,
+});
