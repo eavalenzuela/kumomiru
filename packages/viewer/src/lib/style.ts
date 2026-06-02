@@ -127,5 +127,21 @@ export function buildStylesheet(): StylesheetStyle[] {
         "background-color": "#fffbeb",
       },
     },
+    // Collapse/expand (hand-rolled): a collapsed container's descendants are
+    // hidden so the compound parent shrinks to a chip with a dashed border.
+    {
+      selector: ".collapsed-hidden",
+      style: { display: "none" },
+    },
+    {
+      selector: "node.collapsed",
+      style: {
+        "border-style": "dashed",
+        "border-width": 2,
+        "text-valign": "center",
+        "background-opacity": 0.8,
+        padding: "10px",
+      },
+    },
   ];
 }
