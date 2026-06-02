@@ -6,6 +6,16 @@ import {
   marker,
   plaintextSecretFinding,
 } from "../common/sanitize.js";
+import {
+  analyzeAssumeRole,
+  type AnalyzedPrincipal,
+} from "../analysis/iam.js";
+import {
+  analyzeDataflow,
+  type DataflowIngress,
+  type DataflowMember,
+  type DataflowReference,
+} from "../analysis/dataflow.js";
 import type { DiscoveryClient } from "./client.js";
 
 const SOURCE = "aws-live";
@@ -43,8 +53,12 @@ function isInternetFacing(cidrs: string[]): boolean {
  * Edges produced (network + iam):
  *   - IGW attached-to VPC
  *   - SG protects instance; internet-facing ingress -> instance (allows-ingress)
- *   - instance can-assume role (when an instance-profile role is resolvable)
- *   - external/other-account principals can-assume role (from trust policy)
+ *   - can-assume edges from the shared IAM analysis pass (trust ∩ identity for
+ *     internal principals; trust-only exposure for external ones)
+ *
+ * IAM is intentionally NOT computed inline here: node collection assembles the
+ * principal set, then `analyzeAssumeRole` (the shared brain, used by every
+ * adapter) emits the lens:'iam' edges and external-can-assume findings.
  *
  * Secrets discovered in user-data / env vars are detected, redacted to markers,
  * and raised as findings. Secrets Manager secrets are listed as nodes; values
@@ -65,7 +79,11 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
   const subnetNode = new Map<string, string>();
   const sgNode = new Map<string, string>();
   const instNode = new Map<string, string>();
-  const roleByName = new Map<string, string>();
+
+  // Inputs accumulated for the dataflow analysis pass (run after collection).
+  const dfMembers: DataflowMember[] = [];
+  const dfIngress: DataflowIngress[] = [];
+  const dfLambdas: Array<{ id: string; env: Record<string, string> }> = [];
 
   // --- VPCs ----------------------------------------------------------------
   for (const vpc of await client.vpcs()) {
@@ -148,14 +166,19 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
       tags: sg.tags,
       attributes: {},
     });
-    // Record whether this SG exposes anything to the internet, and on what.
+    // Record whether this SG exposes anything to the internet, and capture
+    // SG-to-SG rules for the dataflow pass (who may reach this group, on what).
     for (const rule of sg.ingress) {
+      const ports = portLabel(rule.fromPort, rule.toPort);
       if (isInternetFacing(rule.cidrs)) {
-        const ports =
-          rule.fromPort === rule.toPort
-            ? String(rule.fromPort ?? "all")
-            : `${rule.fromPort ?? 0}-${rule.toPort ?? 65535}`;
         sgInternetIngress.set(sg.groupId, { ports });
+      }
+      if (rule.sourceGroupIds && rule.sourceGroupIds.length > 0) {
+        dfIngress.push({
+          groupId: sg.groupId,
+          sourceGroupIds: rule.sourceGroupIds,
+          ports,
+        });
       }
     }
   }
@@ -193,6 +216,8 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
       tags: inst.tags,
       attributes,
     });
+    // Remember SG membership so the dataflow pass can expand SG-to-SG rules.
+    dfMembers.push({ id, groupIds: inst.securityGroupIds });
 
     // SG membership + internet-facing ingress edges.
     for (const sgId of inst.securityGroupIds) {
@@ -271,6 +296,9 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
       tags: fn.tags,
       attributes,
     });
+    // Keep the env for the dataflow pass: values that name another resource are
+    // explicit references. The value itself is never stored on the graph.
+    dfLambdas.push({ id, env: fn.environment });
   }
 
   // --- Secrets Manager (listed, never resolved) ----------------------------
@@ -287,10 +315,17 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
     });
   }
 
-  // --- IAM roles + assume-role edges ---------------------------------------
+  // --- IAM principals ------------------------------------------------------
+  // Collect roles and users as principal nodes, then hand the assembled set to
+  // the shared assume-role analysis pass (the brain). No edges are computed
+  // inline: that is what keeps IAM correct in one place across every adapter.
   const accountNode = containers.account(account);
+  const principals: AnalyzedPrincipal[] = [];
+
   for (const role of await client.roles()) {
-    roleByName.set(role.roleName, role.arn);
+    const serviceTrust = role.trustedPrincipals.find(
+      (p) => p.type === "service",
+    );
     nodes.push({
       id: role.arn,
       type: "aws::iam::role",
@@ -298,49 +333,79 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
       account,
       parent: accountNode,
       tags: role.tags,
-      attributes: {},
+      attributes: serviceTrust ? { trustedService: serviceTrust.value } : {},
+    });
+    principals.push({
+      id: role.arn,
+      account,
+      kind: "role",
+      identity: role.identityStatements ?? [],
+      trust: role.trustedPrincipals.map((p) => ({
+        principalValue: p.value,
+        type: p.type,
+        conditionKeys: p.conditionKeys ?? [],
+      })),
     });
   }
 
-  // Assume-role edges: trust policy says WHO may assume each role. (First IAM
-  // increment: assume-role graph only — both-sides identity-policy evaluation
-  // comes later.) External/other-account principals get a critical finding.
-  for (const role of await client.roles()) {
-    for (const p of role.trustedPrincipals) {
-      if (p.type === "service") {
-        // Service trust (e.g. ec2/lambda): model as the service being able to
-        // assume — represented later when we add service principal nodes. Skip
-        // edge for now but keep the role attribute hint.
-        continue;
-      }
-      const external = isExternalPrincipal(p.value, account);
-      const principalNode = ensurePrincipalNode(
-        nodes,
-        containers,
-        account,
-        p.value,
-        external,
-      );
-      edges.push({
-        id: `e-assume-${hash(p.value + role.arn)}`,
-        source: principalNode,
-        target: role.arn,
-        relationship: "can-assume",
-        lens: "iam",
-        attributes: { trustConfirmed: true, external },
-      });
-      if (external) {
-        findings.push({
-          id: `f-extassume-${hash(p.value + role.arn)}`,
-          severity: "critical",
-          kind: "external-can-assume",
-          nodeId: role.arn,
-          title: "External principal can assume a role",
-          detail: `Role ${role.roleName} trusts external principal ${p.value}. Verify this is intended and gated by a condition (ExternalId/MFA).`,
-        });
+  for (const user of (await client.users?.()) ?? []) {
+    nodes.push({
+      id: user.arn,
+      type: "aws::iam::user",
+      name: user.userName,
+      account,
+      parent: accountNode,
+      tags: user.tags,
+      attributes: {},
+    });
+    principals.push({
+      id: user.arn,
+      account,
+      kind: "user",
+      identity: user.identityStatements ?? [],
+    });
+  }
+
+  // --- IAM analysis pass (assume-role graph: trust ∩ identity) -------------
+  const iam = analyzeAssumeRole(principals, account, accountNode);
+  nodes.push(...iam.nodes);
+  edges.push(...iam.edges);
+  findings.push(...iam.findings);
+
+  // --- Dataflow analysis pass (SG reachability + explicit refs) ------------
+  // Resolve Lambda env values that name an existing resource into references.
+  // The matched value is never stored — only the resulting edge.
+  const refTargets = nodes.filter((n) => !CONTAINER_TYPES.has(n.type));
+  const references: DataflowReference[] = [];
+  for (const lambda of dfLambdas) {
+    const seen = new Set<string>();
+    for (const value of Object.values(lambda.env)) {
+      if (typeof value !== "string" || value.length < 4) continue;
+      for (const target of refTargets) {
+        if (target.id === lambda.id || seen.has(target.id)) continue;
+        const byArn = value.includes(target.id);
+        const byName =
+          target.type === "aws::rds::db-instance" &&
+          target.name.length >= 4 &&
+          value.includes(target.name);
+        if (byArn || byName) {
+          seen.add(target.id);
+          references.push({
+            from: lambda.id,
+            to: target.id,
+            relationship: dataflowRelationship(target.type),
+            via: "lambda-env",
+          });
+        }
       }
     }
   }
+  const dataflow = analyzeDataflow({
+    members: dfMembers,
+    ingress: dfIngress,
+    references,
+  });
+  edges.push(...dataflow.edges);
 
   return {
     nodes: [...containers.nodes.values(), ...nodes],
@@ -350,52 +415,29 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
   };
 }
 
-/** A principal value is external if it names a different account than ours. */
-function isExternalPrincipal(value: string, account: string): boolean {
-  // arn:aws:iam::<acct>:... or a bare account id.
-  const m = value.match(/arn:aws:iam::(\d{12}):/);
-  if (m) return m[1] !== account;
-  const bare = value.match(/^(\d{12})$/);
-  if (bare) return bare[1] !== account;
-  return false;
+/** Container node types — never dataflow reference targets. */
+const CONTAINER_TYPES = new Set<string>([
+  "aws::account",
+  "aws::region",
+  "aws::ec2::vpc",
+  "aws::ec2::subnet",
+]);
+
+/** Human-readable port (or range) for an SG rule's from/to ports. */
+function portLabel(fromPort?: number, toPort?: number): string {
+  if (fromPort === toPort) return String(fromPort ?? "all");
+  return `${fromPort ?? 0}-${toPort ?? 65535}`;
 }
 
-/** Create (once) a principal node for an assume-role source. */
-function ensurePrincipalNode(
-  nodes: CloudNode[],
-  containers: Containers,
-  account: string,
-  value: string,
-  external: boolean,
-): string {
-  const id = external
-    ? `aws::iam::external-principal::${value}`
-    : value;
-  if (!nodes.some((n) => n.id === id)) {
-    nodes.push({
-      id,
-      type: external ? "aws::iam::external-principal" : "aws::iam::role",
-      name: external ? shortPrincipal(value) : value,
-      account: external ? extractAccount(value) ?? "external" : account,
-      parent: containers.account(account),
-      tags: {},
-      attributes: external ? { external: true } : {},
-    });
+/** Dataflow edge relationship for a referenced resource type. */
+function dataflowRelationship(type: string): string {
+  switch (type) {
+    case "aws::secretsmanager::secret":
+    case "aws::dynamodb::table":
+      return "reads-from";
+    case "aws::rds::db-instance":
+      return "connects-to";
+    default:
+      return "references";
   }
-  return id;
-}
-
-function shortPrincipal(value: string): string {
-  const acct = extractAccount(value);
-  return acct ? `external-account-${acct}` : value;
-}
-
-function extractAccount(value: string): string | undefined {
-  return value.match(/(\d{12})/)?.[1];
-}
-
-function hash(s: string): string {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = (h * 33) ^ s.charCodeAt(i);
-  return (h >>> 0).toString(36);
 }

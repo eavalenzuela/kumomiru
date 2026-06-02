@@ -28,4 +28,25 @@ export type {
   DiscoveredFunction,
   DiscoveredSecret,
   DiscoveredRole,
+  DiscoveredUser,
 } from "./aws-live/client.js";
+
+// IAM analysis pass (the shared "brain") + its policy evaluator.
+export { analyzeAssumeRole } from "./analysis/iam.js";
+export type {
+  AnalyzedPrincipal,
+  AssumeTrustEntry,
+  IamAnalysisResult,
+} from "./analysis/iam.js";
+export { evaluate as evaluatePolicy } from "./analysis/policy.js";
+export type { PolicyStatement, Decision, EvalResult } from "./analysis/policy.js";
+
+// Dataflow analysis pass (SG reachability + explicit references).
+export { analyzeDataflow } from "./analysis/dataflow.js";
+export type {
+  DataflowInput,
+  DataflowResult,
+  DataflowMember,
+  DataflowIngress,
+  DataflowReference,
+} from "./analysis/dataflow.js";

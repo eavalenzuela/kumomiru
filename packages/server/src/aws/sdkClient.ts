@@ -15,8 +15,12 @@ import {
 } from "@aws-sdk/client-lambda";
 import {
   IAMClient,
-  ListRolesCommand,
-  type Role as IamRole,
+  GetAccountAuthorizationDetailsCommand,
+  type RoleDetail,
+  type UserDetail,
+  type ManagedPolicyDetail,
+  type PolicyDetail,
+  type AttachedPolicy,
 } from "@aws-sdk/client-iam";
 import {
   SecretsManagerClient,
@@ -35,6 +39,8 @@ import type {
   DiscoveredFunction,
   DiscoveredSecret,
   DiscoveredRole,
+  DiscoveredUser,
+  PolicyStatement,
 } from "@kumomiru/adapters";
 
 /**
@@ -69,6 +75,19 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
   const iam = new IAMClient(cfg);
   const sm = new SecretsManagerClient(cfg);
   const sts = new STSClient(cfg);
+
+  /**
+   * GetAccountAuthorizationDetails is the IAM collection backbone (DESIGN.md
+   * §5): one paginated, read-only call returns every role/user with its inline
+   * policies and managed-policy references, plus the managed-policy documents
+   * themselves — exactly the inputs the both-sides assume-role analysis needs.
+   * Memoized so roles() and users() share a single fetch per run.
+   */
+  let authCache: Promise<AuthDetails> | null = null;
+  const authDetails = (): Promise<AuthDetails> => {
+    if (!authCache) authCache = fetchAuthDetails(iam);
+    return authCache;
+  };
 
   return {
     region: () => region,
@@ -124,6 +143,9 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
             ...(p.IpRanges ?? []).map((r) => r.CidrIp ?? ""),
             ...(p.Ipv6Ranges ?? []).map((r) => r.CidrIpv6 ?? ""),
           ].filter(Boolean),
+          sourceGroupIds: (p.UserIdGroupPairs ?? [])
+            .map((g) => g.GroupId ?? "")
+            .filter(Boolean),
         })),
         tags: tagsToRecord(sg.Tags),
       }));
@@ -199,45 +221,169 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
     },
 
     roles: async (): Promise<DiscoveredRole[]> => {
-      const res = await iam.send(new ListRolesCommand({}));
-      return (res.Roles ?? []).map((r: IamRole) => ({
+      const ad = await authDetails();
+      return ad.roles.map((r) => ({
         roleName: r.RoleName ?? "",
         arn: r.Arn ?? "",
         trustedPrincipals: parseTrustPolicy(r.AssumeRolePolicyDocument),
-        tags: {},
+        identityStatements: identityStatementsFor(
+          r.RolePolicyList,
+          r.AttachedManagedPolicies,
+          ad.managed,
+        ),
+        tags: tagsToRecord(r.Tags),
+      }));
+    },
+
+    users: async (): Promise<DiscoveredUser[]> => {
+      const ad = await authDetails();
+      return ad.users.map((u) => ({
+        userName: u.UserName ?? "",
+        arn: u.Arn ?? "",
+        identityStatements: identityStatementsFor(
+          u.UserPolicyList,
+          u.AttachedManagedPolicies,
+          ad.managed,
+        ),
+        tags: tagsToRecord(u.Tags),
       }));
     },
   };
 }
 
+interface AuthDetails {
+  roles: RoleDetail[];
+  users: UserDetail[];
+  /** Managed-policy ARN -> its default-version statements. */
+  managed: Map<string, PolicyStatement[]>;
+}
+
+async function fetchAuthDetails(iam: IAMClient): Promise<AuthDetails> {
+  const roles: RoleDetail[] = [];
+  const users: UserDetail[] = [];
+  const policies: ManagedPolicyDetail[] = [];
+  let marker: string | undefined;
+  do {
+    const res = await iam.send(
+      new GetAccountAuthorizationDetailsCommand({
+        // Only the principal types we model as assume-role sources/targets.
+        Filter: ["Role", "User", "LocalManagedPolicy", "AWSManagedPolicy"],
+        ...(marker ? { Marker: marker } : {}),
+      }),
+    );
+    roles.push(...(res.RoleDetailList ?? []));
+    users.push(...(res.UserDetailList ?? []));
+    policies.push(...(res.Policies ?? []));
+    marker = res.IsTruncated ? res.Marker : undefined;
+  } while (marker);
+
+  const managed = new Map<string, PolicyStatement[]>();
+  for (const p of policies) {
+    if (!p.Arn) continue;
+    const version =
+      p.PolicyVersionList?.find((v) => v.IsDefaultVersion) ??
+      p.PolicyVersionList?.[0];
+    managed.set(p.Arn, projectStatements(version?.Document));
+  }
+  return { roles, users, managed };
+}
+
+/** Inline statements + resolved managed-policy statements for one principal. */
+function identityStatementsFor(
+  inline: PolicyDetail[] | undefined,
+  attached: AttachedPolicy[] | undefined,
+  managed: Map<string, PolicyStatement[]>,
+): PolicyStatement[] {
+  const out: PolicyStatement[] = [];
+  for (const p of inline ?? []) {
+    out.push(...projectStatements(p.PolicyDocument));
+  }
+  for (const a of attached ?? []) {
+    if (a.PolicyArn) out.push(...(managed.get(a.PolicyArn) ?? []));
+  }
+  return out;
+}
+
+/** Parse a policy document (URL-encoded JSON) into a generic statement list. */
+function parsePolicyDoc(doc: string | undefined): unknown {
+  if (!doc) return undefined;
+  try {
+    return JSON.parse(decodeURIComponent(doc));
+  } catch {
+    return undefined;
+  }
+}
+
+const asArray = <T>(v: T | T[] | undefined): T[] =>
+  v === undefined ? [] : Array.isArray(v) ? v : [v];
+
+/** Project an identity/resource policy document to evaluable PolicyStatements. */
+function projectStatements(doc: string | undefined): PolicyStatement[] {
+  const parsed = parsePolicyDoc(doc) as { Statement?: unknown } | undefined;
+  const out: PolicyStatement[] = [];
+  for (const raw of asArray(parsed?.Statement)) {
+    const s = raw as Record<string, unknown>;
+    const condition = s["Condition"];
+    out.push({
+      effect: s["Effect"] === "Deny" ? "Deny" : "Allow",
+      ...(s["Action"] ? { actions: asArray(s["Action"] as string) } : {}),
+      ...(s["NotAction"]
+        ? { notActions: asArray(s["NotAction"] as string) }
+        : {}),
+      ...(s["Resource"] ? { resources: asArray(s["Resource"] as string) } : {}),
+      ...(s["NotResource"]
+        ? { notResources: asArray(s["NotResource"] as string) }
+        : {}),
+      ...(condition ? { conditionKeys: conditionKeysOf(condition) } : {}),
+    });
+  }
+  return out;
+}
+
+/** Collect the condition keys (e.g. sts:ExternalId) from a Condition block. */
+function conditionKeysOf(condition: unknown): string[] {
+  if (!condition || typeof condition !== "object") return [];
+  const keys = new Set<string>();
+  for (const byOp of Object.values(condition as Record<string, unknown>)) {
+    if (byOp && typeof byOp === "object") {
+      for (const k of Object.keys(byOp as Record<string, unknown>)) keys.add(k);
+    }
+  }
+  return [...keys];
+}
+
 /**
  * Parse an IAM trust policy (URL-encoded JSON) into a flat list of trusted
- * principals. Read-only and defensive: malformed documents yield no principals.
+ * principals, carrying each statement's condition keys. Read-only and
+ * defensive: malformed documents yield no principals.
  */
 function parseTrustPolicy(
   doc: string | undefined,
 ): DiscoveredRole["trustedPrincipals"] {
-  if (!doc) return [];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(decodeURIComponent(doc));
-  } catch {
-    return [];
-  }
+  const parsed = parsePolicyDoc(doc) as { Statement?: unknown } | undefined;
   const out: DiscoveredRole["trustedPrincipals"] = [];
-  const statements = (parsed as { Statement?: unknown }).Statement;
-  const list = Array.isArray(statements) ? statements : [statements];
-  for (const stmt of list) {
-    const principal = (stmt as { Principal?: unknown })?.Principal;
+  for (const raw of asArray(parsed?.Statement)) {
+    const stmt = raw as { Principal?: unknown; Condition?: unknown };
+    const principal = stmt.Principal;
     if (!principal || typeof principal !== "object") continue;
+    const conditionKeys = conditionKeysOf(stmt.Condition);
     for (const [key, value] of Object.entries(
       principal as Record<string, unknown>,
     )) {
       const type =
-        key === "Service" ? "service" : key === "Federated" ? "federated" : "aws";
-      const values = Array.isArray(value) ? value : [value];
-      for (const v of values) {
-        if (typeof v === "string") out.push({ type, value: v });
+        key === "Service"
+          ? "service"
+          : key === "Federated"
+            ? "federated"
+            : "aws";
+      for (const v of asArray(value as string)) {
+        if (typeof v === "string") {
+          out.push({
+            type,
+            value: v,
+            ...(conditionKeys.length ? { conditionKeys } : {}),
+          });
+        }
       }
     }
   }

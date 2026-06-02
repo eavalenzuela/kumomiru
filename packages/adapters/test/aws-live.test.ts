@@ -43,6 +43,23 @@ function fakeClient(): DiscoveryClient {
         ],
         tags: {},
       },
+      {
+        groupId: "sg-db",
+        groupName: "db-sg",
+        vpcId: "vpc-1",
+        // The db tier allows Postgres only from the web tier (SG-to-SG rule):
+        // the explicit "what talks to what" signal for the dataflow lens.
+        ingress: [
+          {
+            fromPort: 5432,
+            toPort: 5432,
+            ipProtocol: "tcp",
+            cidrs: [],
+            sourceGroupIds: ["sg-web"],
+          },
+        ],
+        tags: {},
+      },
     ],
     instances: async () => [
       {
@@ -55,6 +72,13 @@ function fakeClient(): DiscoveryClient {
         userData:
           "#!/bin/bash\nexport AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n",
         tags: { Name: "web-server" },
+      },
+      {
+        instanceId: "i-db",
+        subnetId: "subnet-pub",
+        instanceType: "t3.small",
+        securityGroupIds: ["sg-db"],
+        tags: { Name: "db-host" },
       },
     ],
     dbInstances: async () => [
@@ -71,7 +95,12 @@ function fakeClient(): DiscoveryClient {
       {
         functionName: "report-generator",
         runtime: "nodejs20.x",
-        environment: { LOG_LEVEL: "info" },
+        // An explicit ARN reference to the secret: a dataflow edge, but the
+        // value is never stored on the graph.
+        environment: {
+          LOG_LEVEL: "info",
+          DB_SECRET_ARN: `arn:aws:secretsmanager:${REGION}:${ACCOUNT}:secret:db-credentials-AbCdEf`,
+        },
         tags: {},
       },
     ],
@@ -143,6 +172,36 @@ test("raises a critical finding + iam edge for external assume-role", async () =
   );
   assert.ok(edge, "expected an external can-assume edge");
   assert.equal(edge!.lens, "iam");
+});
+
+test("infers SG-to-SG dataflow: web tier talks to db tier on its port", async () => {
+  const graph = await discoverGraph(fakeClient());
+  const flow = graph.edges.find(
+    (e) =>
+      e.lens === "dataflow" &&
+      e.relationship === "talks-to" &&
+      e.attributes["ports"] === "5432",
+  );
+  assert.ok(flow, "expected an SG-derived dataflow edge");
+  const web = graph.nodes.find((n) => n.name === "web-server")!;
+  const dbHost = graph.nodes.find((n) => n.name === "db-host")!;
+  assert.equal(flow!.source, web.id);
+  assert.equal(flow!.target, dbHost.id);
+});
+
+test("infers Lambda->secret dataflow from an explicit env ARN reference", async () => {
+  const graph = await discoverGraph(fakeClient());
+  const secret = graph.nodes.find(
+    (n) => n.type === "aws::secretsmanager::secret",
+  )!;
+  const ref = graph.edges.find(
+    (e) =>
+      e.lens === "dataflow" &&
+      e.target === secret.id &&
+      e.attributes["via"] === "lambda-env",
+  );
+  assert.ok(ref, "expected a Lambda->secret dataflow reference edge");
+  assert.equal(ref!.relationship, "reads-from");
 });
 
 test("runLiveDiscovery scrubs credentials after the run", async () => {

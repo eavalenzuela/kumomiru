@@ -10,6 +10,8 @@
  * method that mutates cloud state, by construction.
  */
 
+import type { PolicyStatement } from "../analysis/policy.js";
+
 export interface DiscoveredVpc {
   vpcId: string;
   cidrBlock?: string;
@@ -43,6 +45,8 @@ export interface DiscoveredSecurityGroup {
     ipProtocol?: string;
     /** CIDR ranges this rule allows from. */
     cidrs: string[];
+    /** Source security-group ids this rule allows from (UserIdGroupPairs). */
+    sourceGroupIds?: string[];
   }>;
   tags: Record<string, string>;
 }
@@ -92,7 +96,28 @@ export interface DiscoveredRole {
     type: string;
     /** e.g. "ec2.amazonaws.com" or an account/role ARN. */
     value: string;
+    /** Condition keys gating this trust entry (ExternalId, MFA, ...). */
+    conditionKeys?: string[];
   }>;
+  /**
+   * The role's identity-policy statements, projected to what the IAM pass
+   * evaluates. Drives the "both sides" assume-role check (a role can only
+   * assume another role if its OWN identity policy allows sts:AssumeRole). May
+   * be omitted by adapters that don't yet collect identity policies.
+   */
+  identityStatements?: PolicyStatement[];
+  tags: Record<string, string>;
+}
+
+/**
+ * An IAM user — a first-class assume-role *source* principal. Like roles, users
+ * carry identity-policy statements; unlike roles they have no trust policy (you
+ * don't assume a user).
+ */
+export interface DiscoveredUser {
+  userName: string;
+  arn: string;
+  identityStatements?: PolicyStatement[];
   tags: Record<string, string>;
 }
 
@@ -113,4 +138,9 @@ export interface DiscoveryClient {
   functions(): Promise<DiscoveredFunction[]>;
   secrets(): Promise<DiscoveredSecret[]>;
   roles(): Promise<DiscoveredRole[]>;
+  /**
+   * IAM users. Optional: a client that only collects roles still produces a
+   * valid (role-only) assume-role graph. The live SDK client implements it.
+   */
+  users?(): Promise<DiscoveredUser[]>;
 }
