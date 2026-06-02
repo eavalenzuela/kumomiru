@@ -114,5 +114,18 @@ export function buildStylesheet(): StylesheetStyle[] {
       selector: "node.dimmed",
       style: { "text-opacity": 0 },
     },
+    // Search: fade non-matches, ring the matches. Layered over lens dimming.
+    {
+      selector: ".search-miss",
+      style: { opacity: 0.1 },
+    },
+    {
+      selector: "node.search-hit",
+      style: {
+        "border-color": "#f59e0b",
+        "border-width": 3,
+        "background-color": "#fffbeb",
+      },
+    },
   ];
 }

@@ -7,4 +7,5 @@
 export * from "./schema.js";
 export * from "./types.js";
 export * from "./validate.js";
+export { redactGraph } from "./redact.js";
 export { sampleGraph } from "./sample.js";

@@ -13,6 +13,8 @@ interface GraphViewProps {
   graph: Graph;
   lens: Lens;
   onSelect?: (id: string | null) => void;
+  /** Called with the Cytoscape instance once built (and null on teardown). */
+  onCyReady?: (cy: Core | null) => void;
 }
 
 /**
@@ -20,7 +22,7 @@ interface GraphViewProps {
  * changes by dimming edges (and nodes that become isolated) outside the active
  * lens — containers always stay visible so the structure never collapses.
  */
-export function GraphView({ graph, lens, onSelect }: GraphViewProps) {
+export function GraphView({ graph, lens, onSelect, onCyReady }: GraphViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
 
@@ -35,6 +37,19 @@ export function GraphView({ graph, lens, onSelect }: GraphViewProps) {
       wheelSensitivity: 0.2,
     });
     cyRef.current = cy;
+    onCyReady?.(cy);
+
+    // Semantic zoom: each compound container gets a [-] cue that collapses it
+    // to a single box (and [+] to expand) — "collapse a VPC when zoomed out."
+    cy.expandCollapse({
+      layoutBy: null, // keep positions; don't churn the ELK layout on toggle
+      fisheye: true,
+      animate: true,
+      undoable: false,
+      cueEnabled: true,
+      expandCollapseCueSize: 14,
+      expandCollapseCuePosition: "top-left",
+    });
 
     if (onSelect) {
       cy.on("tap", "node", (evt) => onSelect(evt.target.id()));
@@ -44,10 +59,11 @@ export function GraphView({ graph, lens, onSelect }: GraphViewProps) {
     }
 
     return () => {
+      onCyReady?.(null);
       cy.destroy();
       cyRef.current = null;
     };
-  }, [graph, onSelect]);
+  }, [graph, onSelect, onCyReady]);
 
   // React to lens changes without rebuilding the whole graph.
   useEffect(() => {
