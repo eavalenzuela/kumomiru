@@ -7,6 +7,22 @@ import {
 } from "@kumomiru/adapters";
 import { checkReferentialIntegrity } from "@kumomiru/graph";
 import { makeSdkClient } from "../aws/sdkClient.js";
+import { redactObject } from "../redact.js";
+
+/**
+ * Convert a thrown value into a plain, log-safe object: Error's message/name are
+ * non-enumerable so they're surfaced explicitly, and any enumerable extras an
+ * SDK error attaches (request config, headers, partial creds) are included so
+ * `redactObject` can scrub their sensitive keys before they ever hit the log.
+ */
+function toLoggable(err: unknown): unknown {
+  if (err instanceof Error) {
+    // Spread first (enumerable SDK extras), then pin name/message — those are
+    // non-enumerable on Error so the spread omits them.
+    return { ...err, name: err.name, message: err.message };
+  }
+  return err;
+}
 
 /**
  * Body schema for live discovery. Credentials are accepted in the request body
@@ -63,9 +79,13 @@ export function registerLiveRoute(
       }
       return graph;
     } catch (err) {
-      // Never echo the error verbatim — it could contain request context. Log
-      // server-side (redaction is configured) and return a generic message.
-      request.log.error(err, "live discovery failed");
+      // An SDK error can carry request context (headers, partial creds) on its
+      // enumerable properties, which Fastify's path-based redaction does not
+      // cover. Scrub it with the key-name matcher before logging.
+      request.log.error(
+        { err: redactObject(toLoggable(err)) },
+        "live discovery failed",
+      );
       return reply.status(502).send({
         error: "discovery_failed",
         message:

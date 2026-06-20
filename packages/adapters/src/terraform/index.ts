@@ -1,6 +1,12 @@
-import type { CloudNode, CloudEdge, Graph } from "@kumomiru/graph";
+import type { CloudNode, CloudEdge, Finding, Graph } from "@kumomiru/graph";
 import type { Adapter } from "../contract.js";
 import { Containers } from "../common/containers.js";
+import {
+  scanText,
+  scanRecord,
+  marker,
+  plaintextSecretFinding,
+} from "../common/sanitize.js";
 import { TfStateSchema, type TfState } from "./state-schema.js";
 import { NODE_MAPPINGS, regionAccountFromAttrs } from "./mappings.js";
 
@@ -88,11 +94,22 @@ export const terraformAdapter: Adapter<unknown> = {
       collectNetworkEdges(b, byRawId, edges);
     }
 
+    // -- pass 4: secret detection ------------------------------------------
+    // The same sanitization layer the live adapter uses (DESIGN.md §6B): scan
+    // the free-form fields Terraform state carries (EC2 user-data, Lambda env
+    // vars, tag values) for plaintext secrets, replace any value with a marker,
+    // and raise a finding. Without this, tfstate — the locked first adapter —
+    // produced zero findings even when secrets were sitting in the state file.
+    const findings: Finding[] = [];
+    for (const b of built) {
+      collectSecrets(b, findings);
+    }
+
     const nodes = [...containers.nodes.values(), ...built.map((b) => b.node)];
     return {
       nodes,
       edges,
-      findings: [],
+      findings,
       meta: {
         generatedAt: new Date(0).toISOString(),
         source: SOURCE,
@@ -106,6 +123,52 @@ function mappingKey(b: Built): string {
   // address is "type.name"; the type is everything before the first dot.
   const dot = b.address.indexOf(".");
   return dot === -1 ? b.address : b.address.slice(0, dot);
+}
+
+/** Lambda env vars in tfstate live at `environment[0].variables` (a block list). */
+function lambdaEnvVars(attrs: Record<string, unknown>): Record<string, unknown> {
+  const env = attrs["environment"];
+  const block = Array.isArray(env) ? env[0] : env;
+  const vars =
+    block && typeof block === "object"
+      ? (block as Record<string, unknown>)["variables"]
+      : undefined;
+  return vars && typeof vars === "object"
+    ? (vars as Record<string, unknown>)
+    : {};
+}
+
+/**
+ * Scan a resource's secret-prone fields and, on a hit, mark the node (never the
+ * value) and emit a plaintext-secret finding. Mirrors the live adapter so the
+ * two ingestion paths surface the same risk.
+ */
+function collectSecrets(b: Built, findings: Finding[]): void {
+  const a = b.attrs;
+
+  const userData = str(a["user_data"]);
+  if (userData) {
+    const r = scanText(userData);
+    if (r.found) {
+      b.node.attributes["userDataSecret"] = marker(r.kinds[0]!);
+      findings.push(plaintextSecretFinding(b.node.id, "EC2 user-data", r.kinds));
+    }
+  }
+
+  const envScan = scanRecord(lambdaEnvVars(a));
+  if (envScan.found) {
+    b.node.attributes["envSecret"] = marker(envScan.kinds[0]!);
+    findings.push(
+      plaintextSecretFinding(b.node.id, "environment variables", envScan.kinds),
+    );
+  }
+
+  const tagScan = scanRecord(b.node.tags);
+  if (tagScan.found) {
+    // A secret hid in a tag value — redact it in place so it never ships.
+    for (const key of tagScan.keys) b.node.tags[key] = "[redacted-secret]";
+    findings.push(plaintextSecretFinding(b.node.id, "tags", tagScan.kinds));
+  }
 }
 
 function collectNetworkEdges(

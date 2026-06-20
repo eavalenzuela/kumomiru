@@ -1,13 +1,15 @@
 import type { StylesheetStyle } from "cytoscape";
+import { NODE_ICONS } from "./icons.js";
 
 /**
  * Cytoscape stylesheet. The goal is "reads like an architecture diagram," not a
  * force-directed hairball: compound containers are soft tinted boxes with their
- * label pinned to the top-left, leaf resources are clean rounded chips, and the
- * network lens emphasizes internet-facing exposure in red.
+ * label pinned to the top, leaf resources are clean chips with a recognizable
+ * resource glyph on top and the name below, and the network lens emphasizes
+ * internet-facing exposure in red.
  *
- * Per-type accent colors are kept deliberately small and calm; AWS service
- * icons can be layered on later via `background-image`.
+ * Per-type accent colors are kept deliberately small and calm; resource glyphs
+ * (see icons.ts) are layered on via `background-image`.
  */
 
 // Container tints by depth-ish type.
@@ -49,7 +51,32 @@ export function buildStylesheet(): StylesheetStyle[] {
         padding: "8px",
       },
     },
-    // Per-type accent: a left color bar via border on leaf resources.
+    // Leaf resources: a recognizable glyph on top, the name below. This is what
+    // makes the map read like an architecture diagram instead of a box-and-line
+    // wireframe.
+    {
+      selector: "node[!container]",
+      style: {
+        height: 50,
+        "min-width": "72px",
+        "text-valign": "bottom",
+        "text-margin-y": -9,
+        "text-max-width": "130px",
+        "text-wrap": "ellipsis",
+        "font-size": 11,
+        "background-color": "#ffffff",
+        "background-opacity": 1,
+        "background-image": "none",
+        "background-fit": "none",
+        "background-clip": "none",
+        "background-width": "22px",
+        "background-height": "22px",
+        "background-position-x": "50%",
+        "background-position-y": "6px",
+        padding: "6px",
+      },
+    },
+    // Per-type accent: border color on leaf resources.
     ...Object.entries(RESOURCE_ACCENT).map(([type, color]) => ({
       selector: `node[kind = "${type}"]`,
       style: {
@@ -57,6 +84,33 @@ export function buildStylesheet(): StylesheetStyle[] {
         "border-width": 2,
       },
     })),
+    // Per-type resource glyph (background image).
+    ...Object.entries(NODE_ICONS).map(([type, uri]) => ({
+      selector: `node[kind = "${type}"]`,
+      style: { "background-image": uri },
+    })),
+    // Security findings on the canvas (DESIGN.md §6): a node that is the subject
+    // of a critical/high finding gets a danger halo so the risk is visible on
+    // the map, not just in the sidebar. Placed after the per-type accent so it
+    // wins on the border.
+    {
+      selector: 'node[sev = "critical"]',
+      style: {
+        "underlay-color": "#dc2626",
+        "underlay-opacity": 0.25,
+        "underlay-padding": 12,
+        "border-color": "#dc2626",
+        "border-width": 2.5,
+      },
+    },
+    {
+      selector: 'node[sev = "high"]',
+      style: {
+        "underlay-color": "#ea580c",
+        "underlay-opacity": 0.2,
+        "underlay-padding": 9,
+      },
+    },
     // Compound containers: tinted boxes, label top-left, room for children.
     {
       selector: "node[?container]",
@@ -77,42 +131,132 @@ export function buildStylesheet(): StylesheetStyle[] {
       selector: `node[kind = "${type}"]`,
       style: { "background-color": color },
     })),
-    // Edges.
+    // Edges. Base style; per-lens color follows so each lens reads distinctly.
     {
       selector: "edge",
       style: {
-        width: 1.5,
+        width: 1.6,
         "line-color": "#94a3b8",
         "target-arrow-color": "#94a3b8",
         "target-arrow-shape": "triangle",
         "curve-style": "bezier",
-        "arrow-scale": 0.9,
+        "arrow-scale": 0.95,
         label: "data(label)",
         "font-size": 8,
-        color: "#64748b",
+        color: "#475569",
         "text-background-color": "#ffffff",
-        "text-background-opacity": 0.85,
+        "text-background-opacity": 0.9,
         "text-background-padding": "2px",
+        "text-rotation": "autorotate",
       },
     },
-    // Internet-facing ingress: the thing the network lens exists to surface.
+    // Per-lens edge color: network = slate (observed facts), iam = violet
+    // (matches the role accent), dataflow = cyan + dashed (data "in motion").
     {
-      selector: "edge[?internetFacing]",
+      selector: 'edge[lens = "network"]',
+      style: { "line-color": "#475569", "target-arrow-color": "#475569" },
+    },
+    {
+      selector: 'edge[lens = "iam"]',
+      style: { "line-color": "#7c3aed", "target-arrow-color": "#7c3aed" },
+    },
+    {
+      selector: 'edge[lens = "dataflow"]',
+      style: {
+        "line-color": "#0891b2",
+        "target-arrow-color": "#0891b2",
+        "line-style": "dashed",
+        "line-dash-pattern": [6, 3],
+      },
+    },
+    // Exposure edges — internet-facing ingress and access from an external
+    // principal — are the two things kumomiru exists to surface. Bold red in
+    // whatever lens they appear, overriding the per-lens color above.
+    {
+      selector: "edge[?internetFacing], edge[?external]",
       style: {
         "line-color": "#dc2626",
         "target-arrow-color": "#dc2626",
-        width: 2.5,
+        width: 2.6,
         "line-style": "solid",
+        color: "#b91c1c",
+        "font-weight": 700,
       },
     },
-    // Dim everything not in the active lens (class toggled at runtime).
+    // Edges outside the active lens are hidden, so only the active lens's
+    // relationships are drawn (class toggled at runtime).
     {
-      selector: ".dimmed",
-      style: { opacity: 0.08 },
+      selector: "edge.lens-off",
+      style: { display: "none" },
+    },
+    // Leaf resources with no edge in the active lens: recessed but still
+    // legible — context, not a faint empty ghost box.
+    {
+      selector: "node.lens-muted",
+      style: {
+        opacity: 0.4,
+        "border-color": "#cbd5e1",
+        "background-image-opacity": 0.45,
+        // An off-lens node is context, so don't shout its finding here.
+        "underlay-opacity": 0,
+      },
+    },
+    // Selection: ring the selected node and emphasize its neighborhood ("what
+    // does this touch?"). Emphasis only — nothing is faded — so it composes with
+    // lens muting and search instead of fighting over opacity.
+    {
+      selector: "node.sel",
+      style: {
+        "overlay-color": "#0ea5e9",
+        "overlay-opacity": 0.18,
+        "overlay-padding": 8,
+        "border-color": "#0284c7",
+        "border-width": 3,
+        "z-index": 100,
+      },
     },
     {
-      selector: "node.dimmed",
-      style: { "text-opacity": 0 },
+      selector: "node.sel-adj",
+      style: {
+        "border-color": "#0ea5e9",
+        "border-width": 2.5,
+        "z-index": 50,
+      },
+    },
+    {
+      selector: "edge.sel-adj",
+      style: {
+        width: 3,
+        opacity: 1,
+        "z-index": 50,
+      },
+    },
+    // Reverse-reachability spotlight ("who can reach this?"). The reachable set
+    // is ringed in sky blue; everything else fades back.
+    {
+      selector: ".trace-faded",
+      style: { opacity: 0.1 },
+    },
+    {
+      selector: "node.trace",
+      style: {
+        "border-color": "#0284c7",
+        "border-width": 3,
+        "underlay-color": "#0ea5e9",
+        "underlay-opacity": 0.18,
+        "underlay-padding": 8,
+        "z-index": 80,
+      },
+    },
+    {
+      selector: "edge.trace",
+      style: {
+        "line-color": "#0ea5e9",
+        "target-arrow-color": "#0ea5e9",
+        width: 3,
+        opacity: 1,
+        "z-index": 80,
+      },
     },
     // Search: fade non-matches, ring the matches. Layered over lens dimming.
     {
@@ -139,8 +283,13 @@ export function buildStylesheet(): StylesheetStyle[] {
         "border-style": "dashed",
         "border-width": 2,
         "text-valign": "center",
-        "background-opacity": 0.8,
+        "background-opacity": 0.85,
         padding: "10px",
+        // A collapsed compound has all descendants hidden, so it has no children
+        // to size from. Give it an explicit minimum so it renders as a readable
+        // chip instead of collapsing to a degenerate point.
+        "min-width": "120px",
+        "min-height": "40px",
       },
     },
   ];

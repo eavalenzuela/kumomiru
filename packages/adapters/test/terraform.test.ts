@@ -64,3 +64,42 @@ test("derives network edges: IGW attachment and SG membership", () => {
   assert.ok(rels.includes("protects"));
   assert.ok(graph.edges.every((e) => e.lens === "network"));
 });
+
+test("detects plaintext secrets in user-data and tags, never storing the value", () => {
+  const state = {
+    version: 4,
+    resources: [
+      {
+        mode: "managed",
+        type: "aws_instance",
+        name: "web",
+        instances: [
+          {
+            attributes: {
+              arn: "arn:aws:ec2:us-east-1:123456789012:instance/i-secret01",
+              id: "i-secret01",
+              instance_type: "t3.small",
+              user_data: "#!/bin/bash\nexport AWS_KEY=AKIAIOSFODNN7EXAMPLE\n",
+              tags: { Name: "web", DB_PASSWORD: "hunter2supersecret" },
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const graph = terraformAdapter.toGraph(state);
+  const json = JSON.stringify(graph);
+  // The actual secret values must never appear anywhere in the graph.
+  assert.ok(!json.includes("AKIAIOSFODNN7EXAMPLE"), "AWS key leaked");
+  assert.ok(!json.includes("hunter2supersecret"), "tag secret leaked");
+  // Two findings: one for user-data, one for the tag.
+  const kinds = graph.findings.map((f) => f.kind);
+  assert.equal(kinds.filter((k) => k === "plaintext-secret").length, 2);
+  const inst = graph.nodes.find((n) => n.type === "aws::ec2::instance")!;
+  assert.equal(
+    (inst.attributes["userDataSecret"] as { secretPresent?: boolean })
+      .secretPresent,
+    true,
+  );
+  assert.equal(inst.tags["DB_PASSWORD"], "[redacted-secret]");
+});

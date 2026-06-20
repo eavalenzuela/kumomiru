@@ -212,6 +212,56 @@ test("a condition on external trust downgrades to high + marks conditional", () 
   );
 });
 
+test("same-account sts:assumed-role trust is NOT treated as external", () => {
+  // Regression: extractAccount only matched arn:aws:iam::, so an in-account
+  // assumed-role session ARN fell through and fabricated a critical finding.
+  const target = roleArn("target");
+  const stsArn = `arn:aws:sts::${ACCOUNT}:assumed-role/Foo/session`;
+  const principals: AnalyzedPrincipal[] = [
+    {
+      id: target,
+      account: ACCOUNT,
+      kind: "role",
+      identity: [],
+      trust: [{ principalValue: stsArn, type: "aws" }],
+    },
+  ];
+  const { nodes, findings } = analyzeAssumeRole(principals, ACCOUNT, acctNode);
+  assert.equal(
+    findings.filter((f) => f.kind === "external-can-assume").length,
+    0,
+    "same-account sts ARN must not be flagged external",
+  );
+  assert.equal(nodes.length, 0, "no external node should be synthesized");
+});
+
+test("non-aws partition (GovCloud) same-account root is internal", () => {
+  const target = roleArn("target");
+  const allowed = roleArn("allowed");
+  const principals: AnalyzedPrincipal[] = [
+    {
+      id: target,
+      account: ACCOUNT,
+      kind: "role",
+      identity: [],
+      trust: [
+        { principalValue: `arn:aws-us-gov:iam::${ACCOUNT}:root`, type: "aws" },
+      ],
+    },
+    { id: allowed, account: ACCOUNT, kind: "role", identity: [allowAssume(target)] },
+  ];
+  const { edges, findings } = analyzeAssumeRole(principals, ACCOUNT, acctNode);
+  assert.equal(
+    findings.filter((f) => f.kind === "external-can-assume").length,
+    0,
+    "gov same-account root must not be external",
+  );
+  assert.ok(
+    edges.some((e) => e.source === allowed && e.target === target),
+    "expected an internal can-assume edge",
+  );
+});
+
 test("service trust does not produce an assume edge", () => {
   const role = roleArn("web-instance-role");
   const principals: AnalyzedPrincipal[] = [

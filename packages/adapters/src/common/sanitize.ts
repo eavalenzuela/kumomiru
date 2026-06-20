@@ -29,7 +29,27 @@ const DETECTORS: Detector[] = [
     re: /\baws_secret_access_key\s*[=:]\s*["']?[A-Za-z0-9/+]{40}\b/i,
   },
   { kind: "private-key", re: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/ },
-  { kind: "generic-secret-assignment", re: /\b(password|passwd|secret|api[_-]?key|token)\s*[=:]\s*["'][^"'\s]{8,}["']/i },
+  // Assignment to a secret-named key. The value may be quoted ("x") or bare
+  // (KEY=value) — the bare form is the most common real case (Lambda/ECS env
+  // vars like DB_PASSWORD=hunter2supersecret) and the previous pattern, which
+  // required quotes, missed it entirely.
+  {
+    // No leading \b: env-var names like DB_PASSWORD have no word boundary before
+    // "PASSWORD" (it follows "_"). The trailing [=:] anchor keeps false
+    // positives low (the keyword must be the left side of an assignment).
+    kind: "generic-secret-assignment",
+    re: /(password|passwd|secret|api[_-]?key|token|access[_-]?key)["']?\s*[=:]\s*["']?[^\s"']{8,}/i,
+  },
+  // High-signal provider token formats (anchored, fixed shapes → low FP).
+  { kind: "github-token", re: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36}\b/ },
+  { kind: "slack-token", re: /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/ },
+  { kind: "stripe-key", re: /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b/ },
+  { kind: "google-api-key", re: /\bAIza[0-9A-Za-z_-]{35}\b/ },
+  // Credentials embedded in a connection URL: scheme://user:pass@host.
+  {
+    kind: "url-credentials",
+    re: /\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:[^\s:/@]+@/i,
+  },
 ];
 
 export interface ScanResult {

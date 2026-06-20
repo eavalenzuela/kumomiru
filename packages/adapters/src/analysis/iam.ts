@@ -158,13 +158,25 @@ function isExternalPrincipal(value: string, selfAccount: string): boolean {
   return true;
 }
 
-/** `arn:aws:iam::<acct>:root` → `<acct>`. */
+/**
+ * `arn:<partition>:iam::<acct>:root` → `<acct>`. Partition-agnostic so GovCloud
+ * (`aws-us-gov`) and China (`aws-cn`) account-root ARNs aren't mistaken for
+ * external principals.
+ */
 function accountRoot(value: string): string | undefined {
-  return value.match(/^arn:aws:iam::(\d{12}):root$/)?.[1];
+  return value.match(/^arn:[a-z-]+:iam::(\d{12}):root$/)?.[1];
 }
 
+/**
+ * Account id from any ARN, regardless of partition or service. The account is
+ * the 5th colon-delimited field: `arn:partition:service:region:account:resource`
+ * (region is empty for iam/sts). The previous version matched only
+ * `arn:aws:iam::`, so same-account `sts:assumed-role` sessions and non-`aws`
+ * partition ARNs fell through and were wrongly flagged external — fabricating
+ * critical "external can assume" findings, which erode trust in the tool.
+ */
 function extractAccount(value: string): string | undefined {
-  return value.match(/arn:aws:iam::(\d{12}):/)?.[1];
+  return value.match(/^arn:[a-z-]+:[a-z0-9-]*:[a-z0-9-]*:(\d{12}):/)?.[1];
 }
 
 function globEquals(pattern: string, candidate: string): boolean {
