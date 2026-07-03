@@ -204,6 +204,85 @@ test("infers Lambda->secret dataflow from an explicit env ARN reference", async 
   assert.equal(ref!.relationship, "reads-from");
 });
 
+test("internet-facing ingress edge sources from the SG, never a self-loop", async () => {
+  const graph = await discoverGraph(fakeClient());
+  const exposed = graph.edges.find(
+    (e) => e.attributes["internetFacing"] === true,
+  )!;
+  assert.notEqual(exposed.source, exposed.target, "must not be a self-loop");
+  const src = graph.nodes.find((n) => n.id === exposed.source)!;
+  assert.equal(src.type, "aws::ec2::security-group");
+  assert.equal(exposed.attributes["from"], "0.0.0.0/0");
+});
+
+test("scans tags for secrets and redacts them in place (parity with terraform)", async () => {
+  const base = fakeClient();
+  const client: DiscoveryClient = {
+    ...base,
+    vpcs: async () => [
+      {
+        vpcId: "vpc-1",
+        cidrBlock: "10.0.0.0/16",
+        tags: { Name: "main-vpc", DB_PASSWORD: "hunter2supersecret" },
+      },
+    ],
+  };
+  const graph = await discoverGraph(client);
+  const json = JSON.stringify(graph);
+  assert.ok(!json.includes("hunter2supersecret"), "tag secret leaked");
+  assert.ok(
+    graph.findings.some(
+      (f) => f.kind === "plaintext-secret" && f.title.includes("tags"),
+    ),
+    "expected a tag plaintext-secret finding",
+  );
+  const vpc = graph.nodes.find((n) => n.type === "aws::ec2::vpc")!;
+  assert.equal(vpc.tags["DB_PASSWORD"], "[redacted-secret]");
+});
+
+test("Lambda-env dataflow ignores a substring hit but matches a delimited name", async () => {
+  const base = fakeClient();
+  const client: DiscoveryClient = {
+    ...base,
+    dbInstances: async () => [
+      {
+        dbInstanceIdentifier: "prod",
+        engine: "postgres",
+        port: 5432,
+        publiclyAccessible: false,
+        subnetIds: [],
+        tags: {},
+      },
+    ],
+    functions: async () => [
+      {
+        functionName: "substr",
+        runtime: "nodejs20.x",
+        environment: { MODE: "production-config" },
+        tags: {},
+      },
+      {
+        functionName: "delim",
+        runtime: "nodejs20.x",
+        environment: { DB_HOST: "prod.internal.example" },
+        tags: {},
+      },
+    ],
+  };
+  const graph = await discoverGraph(client);
+  const dbNode = graph.nodes.find(
+    (n) => n.type === "aws::rds::db-instance" && n.name === "prod",
+  )!;
+  const substrFn = graph.nodes.find((n) => n.name === "substr")!;
+  const delimFn = graph.nodes.find((n) => n.name === "delim")!;
+  const flowFrom = (fnId: string) =>
+    graph.edges.some(
+      (e) => e.lens === "dataflow" && e.source === fnId && e.target === dbNode.id,
+    );
+  assert.ok(!flowFrom(substrFn.id), "substring-only match must not draw an edge");
+  assert.ok(flowFrom(delimFn.id), "delimited name match must draw an edge");
+});
+
 test("runLiveDiscovery scrubs credentials after the run", async () => {
   const creds: AwsCredentials = {
     accessKeyId: "AKIAEXAMPLE",

@@ -13,8 +13,7 @@
         "ec2:DescribeInstances",
         "rds:DescribeDBInstances",
         "lambda:ListFunctions",
-        "lambda:GetFunctionConfiguration",
-        "iam:ListRoles",
+        "iam:GetAccountAuthorizationDetails",
         "secretsmanager:ListSecrets"
       ],
       "Resource": "*"

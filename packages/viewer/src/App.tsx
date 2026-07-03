@@ -14,9 +14,11 @@ import { Legend } from "./components/Legend.js";
 import { MapControls } from "./components/MapControls.js";
 import { DataSourcePanel } from "./components/DataSourcePanel.js";
 import { applySearch } from "./lib/search.js";
-import { reverseReachable } from "./lib/reachability.js";
+import { reverseReachable, forwardReachable } from "./lib/reachability.js";
 
 const EXTERNAL_PRINCIPAL_TYPE = "aws::iam::external-principal";
+
+type TraceDir = "reverse" | "forward";
 
 export function App() {
   const [graph, setGraph] = useState<Graph | null>(null);
@@ -24,6 +26,7 @@ export function App() {
   const [lens, setLens] = useState<Lens>("network");
   const [selected, setSelected] = useState<string | null>(null);
   const [traceId, setTraceId] = useState<string | null>(null);
+  const [traceDir, setTraceDir] = useState<TraceDir>("reverse");
   const [dataSourceOpen, setDataSourceOpen] = useState(false);
 
   // Selecting a node clears any active reachability trace.
@@ -31,11 +34,20 @@ export function App() {
     setSelected(id);
     setTraceId(null);
   }, []);
-  // "Who can reach this?" — the trace is an IAM-lens question, so switch to it.
-  const traceNode = useCallback((id: string) => {
+  // Reachability traces are IAM-lens questions, so switch to it.
+  // "Who can reach this?" — reverse transitive closure to the target.
+  const traceReverse = useCallback((id: string) => {
     setLens("iam");
     setSelected(id);
     setTraceId(id);
+    setTraceDir("reverse");
+  }, []);
+  // "What can this reach?" — forward transitive closure from the source.
+  const traceForward = useCallback((id: string) => {
+    setLens("iam");
+    setSelected(id);
+    setTraceId(id);
+    setTraceDir("forward");
   }, []);
 
   // The live Cytoscape instance, shared with the toolbar (PNG export, etc.).
@@ -68,11 +80,14 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph]);
 
-  // The reachability spotlight: which principals can reach the traced node.
-  const trace = useMemo(
-    () => (traceId && graph ? reverseReachable(graph, traceId, "iam") : null),
-    [graph, traceId],
-  );
+  // The reachability spotlight over IAM edges: reverse ("who can reach this?")
+  // or forward ("what can this reach?"), depending on which was requested.
+  const trace = useMemo(() => {
+    if (!traceId || !graph) return null;
+    return traceDir === "forward"
+      ? forwardReachable(graph, traceId, "iam")
+      : reverseReachable(graph, traceId, "iam");
+  }, [graph, traceId, traceDir]);
 
   // Apply the search highlight whenever the query or the loaded graph changes.
   useEffect(() => {
@@ -80,6 +95,18 @@ export function App() {
     if (!cy) return;
     setMatches(applySearch(cy, query));
   }, [query, graph]);
+
+  // Escape steps back out of the current focus: clear an active trace first,
+  // then a selection. The modal owns Escape while it is open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || dataSourceOpen) return;
+      if (traceId) setTraceId(null);
+      else if (selected) selectNode(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dataSourceOpen, traceId, selected, selectNode]);
 
   // Resolve the selected node and everything the inspector needs from the graph
   // model (never from a cloud SDK).
@@ -184,9 +211,19 @@ export function App() {
           {trace && tracedNode && (
             <div className="trace-banner">
               <span>
-                <strong>{Math.max(trace.nodes.length - 1, 0)}</strong> principal
-                {trace.nodes.length - 1 === 1 ? "" : "s"} can reach{" "}
-                <strong>{tracedNode.name || tracedNode.id}</strong>
+                {traceDir === "forward" ? (
+                  <>
+                    <strong>{tracedNode.name || tracedNode.id}</strong> can reach{" "}
+                    <strong>{Math.max(trace.nodes.length - 1, 0)}</strong>{" "}
+                    resource{trace.nodes.length - 1 === 1 ? "" : "s"}
+                  </>
+                ) : (
+                  <>
+                    <strong>{Math.max(trace.nodes.length - 1, 0)}</strong>{" "}
+                    principal{trace.nodes.length - 1 === 1 ? "" : "s"} can reach{" "}
+                    <strong>{tracedNode.name || tracedNode.id}</strong>
+                  </>
+                )}
               </span>
               <button type="button" onClick={() => setTraceId(null)}>
                 Clear
@@ -203,7 +240,8 @@ export function App() {
               findings={selectedFindings}
               connections={connections}
               onSelectNode={selectNode}
-              onTrace={traceNode}
+              onTrace={traceReverse}
+              onTraceForward={traceForward}
               onClose={() => selectNode(null)}
             />
           ) : (

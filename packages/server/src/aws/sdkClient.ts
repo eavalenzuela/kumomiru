@@ -8,11 +8,7 @@ import {
   DescribeInstancesCommand,
 } from "@aws-sdk/client-ec2";
 import { RDSClient, DescribeDBInstancesCommand } from "@aws-sdk/client-rds";
-import {
-  LambdaClient,
-  ListFunctionsCommand,
-  GetFunctionConfigurationCommand,
-} from "@aws-sdk/client-lambda";
+import { LambdaClient, ListFunctionsCommand } from "@aws-sdk/client-lambda";
 import {
   IAMClient,
   GetAccountAuthorizationDetailsCommand,
@@ -60,6 +56,29 @@ function tagsToRecord(
   return out;
 }
 
+/**
+ * Follow a paginated List/Describe call to completion. AWS list APIs return one
+ * page plus a continuation token; reading only the first page (the previous
+ * behaviour of every call here except auth-details) silently truncates the map
+ * in any account past the first page — the worst failure mode for a security
+ * tool, since a missing resource reads as "not there". Token field names differ
+ * per service (NextToken vs Marker/NextMarker), so the accessors are injected.
+ */
+async function paginate<TOut, TItem>(
+  fetchPage: (token: string | undefined) => Promise<TOut>,
+  items: (out: TOut) => TItem[] | undefined,
+  nextToken: (out: TOut) => string | undefined,
+): Promise<TItem[]> {
+  const acc: TItem[] = [];
+  let token: string | undefined;
+  do {
+    const out = await fetchPage(token);
+    acc.push(...(items(out) ?? []));
+    token = nextToken(out);
+  } while (token);
+  return acc;
+}
+
 export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
   const credentials = {
     accessKeyId: creds.accessKeyId,
@@ -98,8 +117,12 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
     },
 
     vpcs: async (): Promise<DiscoveredVpc[]> => {
-      const res = await ec2.send(new DescribeVpcsCommand({}));
-      return (res.Vpcs ?? []).map((v) => ({
+      const vpcs = await paginate(
+        (t) => ec2.send(new DescribeVpcsCommand(t ? { NextToken: t } : {})),
+        (o) => o.Vpcs,
+        (o) => o.NextToken,
+      );
+      return vpcs.map((v) => ({
         vpcId: v.VpcId ?? "",
         ...(v.CidrBlock ? { cidrBlock: v.CidrBlock } : {}),
         tags: tagsToRecord(v.Tags),
@@ -107,8 +130,12 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
     },
 
     subnets: async (): Promise<DiscoveredSubnet[]> => {
-      const res = await ec2.send(new DescribeSubnetsCommand({}));
-      return (res.Subnets ?? []).map((s) => ({
+      const subnets = await paginate(
+        (t) => ec2.send(new DescribeSubnetsCommand(t ? { NextToken: t } : {})),
+        (o) => o.Subnets,
+        (o) => o.NextToken,
+      );
+      return subnets.map((s) => ({
         subnetId: s.SubnetId ?? "",
         vpcId: s.VpcId ?? "",
         ...(s.CidrBlock ? { cidrBlock: s.CidrBlock } : {}),
@@ -119,8 +146,15 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
     },
 
     internetGateways: async (): Promise<DiscoveredInternetGateway[]> => {
-      const res = await ec2.send(new DescribeInternetGatewaysCommand({}));
-      return (res.InternetGateways ?? []).map((g) => ({
+      const gws = await paginate(
+        (t) =>
+          ec2.send(
+            new DescribeInternetGatewaysCommand(t ? { NextToken: t } : {}),
+          ),
+        (o) => o.InternetGateways,
+        (o) => o.NextToken,
+      );
+      return gws.map((g) => ({
         internetGatewayId: g.InternetGatewayId ?? "",
         ...(g.Attachments?.[0]?.VpcId
           ? { attachedVpcId: g.Attachments[0].VpcId }
@@ -130,8 +164,15 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
     },
 
     securityGroups: async (): Promise<DiscoveredSecurityGroup[]> => {
-      const res = await ec2.send(new DescribeSecurityGroupsCommand({}));
-      return (res.SecurityGroups ?? []).map((sg) => ({
+      const sgs = await paginate(
+        (t) =>
+          ec2.send(
+            new DescribeSecurityGroupsCommand(t ? { NextToken: t } : {}),
+          ),
+        (o) => o.SecurityGroups,
+        (o) => o.NextToken,
+      );
+      return sgs.map((sg) => ({
         groupId: sg.GroupId ?? "",
         ...(sg.GroupName ? { groupName: sg.GroupName } : {}),
         ...(sg.VpcId ? { vpcId: sg.VpcId } : {}),
@@ -152,9 +193,14 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
     },
 
     instances: async (): Promise<DiscoveredInstance[]> => {
-      const res = await ec2.send(new DescribeInstancesCommand({}));
+      const reservations = await paginate(
+        (t) =>
+          ec2.send(new DescribeInstancesCommand(t ? { NextToken: t } : {})),
+        (o) => o.Reservations,
+        (o) => o.NextToken,
+      );
       const out: DiscoveredInstance[] = [];
-      for (const r of res.Reservations ?? []) {
+      for (const r of reservations) {
         for (const i of r.Instances ?? []) {
           out.push({
             instanceId: i.InstanceId ?? "",
@@ -176,8 +222,13 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
     },
 
     dbInstances: async (): Promise<DiscoveredDbInstance[]> => {
-      const res = await rds.send(new DescribeDBInstancesCommand({}));
-      return (res.DBInstances ?? []).map((d) => ({
+      // RDS paginates with Marker (request) / Marker (response), not NextToken.
+      const dbs = await paginate(
+        (m) => rds.send(new DescribeDBInstancesCommand(m ? { Marker: m } : {})),
+        (o) => o.DBInstances,
+        (o) => o.Marker,
+      );
+      return dbs.map((d) => ({
         dbInstanceIdentifier: d.DBInstanceIdentifier ?? "",
         ...(d.Engine ? { engine: d.Engine } : {}),
         ...(d.Endpoint?.Port ? { port: d.Endpoint.Port } : {}),
@@ -190,18 +241,22 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
     },
 
     functions: async (): Promise<DiscoveredFunction[]> => {
-      const list = await lambda.send(new ListFunctionsCommand({}));
+      // ListFunctions already returns each function's full configuration,
+      // including Environment.Variables — so there is no need for a per-function
+      // GetFunctionConfiguration call (an N+1 that also required an extra
+      // permission). Lambda paginates with Marker / NextMarker.
+      const fns = await paginate(
+        (m) => lambda.send(new ListFunctionsCommand(m ? { Marker: m } : {})),
+        (o) => o.Functions,
+        (o) => o.NextMarker,
+      );
       const out: DiscoveredFunction[] = [];
-      for (const fn of list.Functions ?? []) {
+      for (const fn of fns) {
         if (!fn.FunctionName) continue;
-        // Environment requires GetFunctionConfiguration; fetch per function.
-        const cfgRes = await lambda.send(
-          new GetFunctionConfigurationCommand({ FunctionName: fn.FunctionName }),
-        );
         out.push({
           functionName: fn.FunctionName,
           ...(fn.Runtime ? { runtime: fn.Runtime } : {}),
-          environment: (cfgRes.Environment?.Variables ?? {}) as Record<
+          environment: (fn.Environment?.Variables ?? {}) as Record<
             string,
             string
           >,
@@ -212,8 +267,12 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
     },
 
     secrets: async (): Promise<DiscoveredSecret[]> => {
-      const res = await sm.send(new ListSecretsCommand({}));
-      return (res.SecretList ?? []).map((s) => ({
+      const list = await paginate(
+        (t) => sm.send(new ListSecretsCommand(t ? { NextToken: t } : {})),
+        (o) => o.SecretList,
+        (o) => o.NextToken,
+      );
+      return list.map((s) => ({
         arn: s.ARN ?? "",
         name: s.Name ?? "",
         tags: tagsToRecord(s.Tags),

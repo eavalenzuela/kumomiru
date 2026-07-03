@@ -44,3 +44,41 @@ export function reverseReachable(
   }
   return { nodes: [...nodes], edges: [...edges] };
 }
+
+/**
+ * Forward reachability over one lens: "what can this principal reach?" — the
+ * other half of DESIGN.md §5's reachability pair (the forward-subgraph question
+ * to the reverse "who can reach admin?"). A breadth-first walk *forward* over
+ * outgoing edges collects everything the source can ultimately reach and the
+ * edges on the way — e.g. from a user: the roles it can assume, and (transitively)
+ * whatever those roles can reach. Pure graph traversal; no secret is ever read.
+ */
+export function forwardReachable(
+  graph: Graph,
+  sourceId: string,
+  lens: Lens,
+): ReachSet {
+  const outgoing = new Map<string, { edgeId: string; to: string }[]>();
+  for (const e of graph.edges) {
+    if (e.lens !== lens) continue;
+    const list = outgoing.get(e.source);
+    const entry = { edgeId: e.id, to: e.target };
+    if (list) list.push(entry);
+    else outgoing.set(e.source, [entry]);
+  }
+
+  const nodes = new Set<string>([sourceId]);
+  const edges = new Set<string>();
+  const queue: string[] = [sourceId];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const { edgeId, to } of outgoing.get(cur) ?? []) {
+      edges.add(edgeId);
+      if (!nodes.has(to)) {
+        nodes.add(to);
+        queue.push(to);
+      }
+    }
+  }
+  return { nodes: [...nodes], edges: [...edges] };
+}

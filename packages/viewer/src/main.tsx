@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
+import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import "./styles.css";
 
 const root = document.getElementById("root");
@@ -11,4 +12,8 @@ if (!root) throw new Error("missing #root element");
 // common source of subtle teardown bugs with canvas libraries. Dropping the
 // double-invoke keeps the canvas lifecycle simple. (Production never
 // double-invokes, so behaviour is unchanged.)
-createRoot(root).render(<App />);
+createRoot(root).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>,
+);

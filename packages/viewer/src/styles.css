@@ -311,6 +311,39 @@ body,
   font-size: 13px;
 }
 
+/* Per-severity summary chips above the findings list. */
+.findings-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.sev-chip {
+  font-size: 10px;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #fff;
+}
+
+.sev-chip.sev-critical {
+  background: #b91c1c;
+}
+.sev-chip.sev-high {
+  background: #ea580c;
+}
+.sev-chip.sev-medium {
+  background: #ca8a04;
+}
+.sev-chip.sev-low {
+  background: #2563eb;
+}
+.sev-chip.sev-info {
+  background: #64748b;
+}
+
 /* Load data button + modal */
 .load-data-btn {
   border: 1px solid #1e293b;
@@ -503,6 +536,12 @@ body,
 
 .trace-btn:hover {
   background: #bae6fd;
+}
+
+.trace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 /* Inspector (node detail panel) */

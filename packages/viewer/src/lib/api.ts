@@ -19,6 +19,13 @@ export function fetchSample(): Promise<Graph> {
   return fetchGraph("/sample");
 }
 
+/**
+ * URL of the least-privilege read-only IAM policy the server serves (the exact
+ * action set discovery needs). Used as a download link so onboarding a scan role
+ * is one click.
+ */
+export const leastPrivilegePolicyUrl = "/api/policy/least-privilege";
+
 /** Credentials for live discovery — sent in the POST body only, never stored. */
 export interface LiveCredentials {
   accessKeyId: string;

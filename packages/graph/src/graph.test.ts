@@ -52,3 +52,26 @@ test("validation rejects an edge pointing at a missing node", () => {
   const problems = checkReferentialIntegrity(broken);
   assert.ok(problems.some((p) => p.includes("unknown target")));
 });
+
+test("validation flags a self-loop edge", () => {
+  const broken = structuredClone(sampleGraph);
+  const nodeId = broken.nodes[0]!.id;
+  broken.edges.push({
+    id: "e-self",
+    source: nodeId,
+    target: nodeId,
+    relationship: "allows-ingress",
+    lens: "network",
+    attributes: {},
+  });
+  const problems = checkReferentialIntegrity(broken);
+  assert.ok(problems.some((p) => p.includes("self-loop")));
+});
+
+test("validation flags a duplicate finding id", () => {
+  const broken = structuredClone(sampleGraph);
+  const dup = structuredClone(broken.findings[0]!);
+  broken.findings.push(dup);
+  const problems = checkReferentialIntegrity(broken);
+  assert.ok(problems.some((p) => p.includes("duplicate finding id")));
+});

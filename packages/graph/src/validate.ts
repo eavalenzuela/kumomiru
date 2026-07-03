@@ -42,15 +42,30 @@ export function checkReferentialIntegrity(graph: Graph): string[] {
     if (!nodeIds.has(edge.target)) {
       problems.push(`edge ${edge.id} has unknown target: ${edge.target}`);
     }
+    // A relationship whose endpoints are the same node is almost always a wiring
+    // bug (e.g. a missing lookup falling back to the node itself), and it renders
+    // as a nonsensical loop. None of the model's relationships are reflexive.
+    if (edge.source === edge.target) {
+      problems.push(`edge ${edge.id} is a self-loop on: ${edge.source}`);
+    }
   }
 
   for (const node of graph.nodes) {
     if (node.parent !== undefined && !nodeIds.has(node.parent)) {
       problems.push(`node ${node.id} has unknown parent: ${node.parent}`);
     }
+    // A node cannot contain itself.
+    if (node.parent === node.id) {
+      problems.push(`node ${node.id} is its own parent`);
+    }
   }
 
+  const findingIds = new Set<string>();
   for (const finding of graph.findings) {
+    if (findingIds.has(finding.id)) {
+      problems.push(`duplicate finding id: ${finding.id}`);
+    }
+    findingIds.add(finding.id);
     if (finding.nodeId !== undefined && !nodeIds.has(finding.nodeId)) {
       problems.push(
         `finding ${finding.id} references unknown node: ${finding.nodeId}`,

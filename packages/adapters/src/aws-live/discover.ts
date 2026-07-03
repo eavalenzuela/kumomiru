@@ -152,7 +152,7 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
   }
 
   // --- Security groups -----------------------------------------------------
-  const sgInternetIngress = new Map<string, { ports: string }>();
+  const sgInternetIngress = new Map<string, { ports: string; cidr: string }>();
   for (const sg of await client.securityGroups()) {
     const id = sgArn(account, region, sg.groupId);
     sgNode.set(sg.groupId, id);
@@ -171,7 +171,12 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
     for (const rule of sg.ingress) {
       const ports = portLabel(rule.fromPort, rule.toPort);
       if (isInternetFacing(rule.cidrs)) {
-        sgInternetIngress.set(sg.groupId, { ports });
+        // Carry the actual open CIDR (IPv4 or IPv6) instead of assuming v4 — an
+        // ::/0 rule was previously mislabelled 0.0.0.0/0.
+        const cidr =
+          rule.cidrs.find((c) => c === "0.0.0.0/0" || c === "::/0") ??
+          "0.0.0.0/0";
+        sgInternetIngress.set(sg.groupId, { ports, cidr });
       }
       if (rule.sourceGroupIds && rule.sourceGroupIds.length > 0) {
         dfIngress.push({
@@ -233,16 +238,19 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
         });
       }
       const exposed = sgInternetIngress.get(sgId);
-      if (exposed) {
+      // Only emit when the SG node exists: the source must be the SG, never the
+      // instance itself. The previous `source: sgId2 ?? id` fell back to the
+      // instance, drawing a nonsensical instance→itself self-loop.
+      if (exposed && sgId2) {
         edges.push({
           id: `e-net-${sgId}-${inst.instanceId}`,
-          source: sgId2 ?? id,
+          source: sgId2,
           target: id,
           relationship: "allows-ingress",
           lens: "network",
           attributes: {
             ports: exposed.ports,
-            from: "0.0.0.0/0",
+            from: exposed.cidr,
             internetFacing: true,
           },
         });
@@ -383,11 +391,14 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
       if (typeof value !== "string" || value.length < 4) continue;
       for (const target of refTargets) {
         if (target.id === lambda.id || seen.has(target.id)) continue;
+        // ARNs are specific enough to match as a substring; a bare resource
+        // name (e.g. an RDS identifier) must appear as a delimited token so a
+        // short identifier can't false-match inside an unrelated word
+        // (`prod` inside `production-config`).
         const byArn = value.includes(target.id);
         const byName =
           target.type === "aws::rds::db-instance" &&
-          target.name.length >= 4 &&
-          value.includes(target.name);
+          mentionsToken(value, target.name);
         if (byArn || byName) {
           seen.add(target.id);
           references.push({
@@ -407,12 +418,35 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
   });
   edges.push(...dataflow.edges);
 
+  // --- Tag secret scan (parity with the Terraform adapter) -----------------
+  // A plaintext secret can hide in a tag value on any resource. Redact it in
+  // place so it never ships, and raise a finding — the live adapter previously
+  // scanned only user-data and Lambda env vars, letting tag secrets through.
+  for (const node of nodes) {
+    const tagScan = scanRecord(node.tags);
+    if (tagScan.found) {
+      for (const key of tagScan.keys) node.tags[key] = "[redacted-secret]";
+      findings.push(plaintextSecretFinding(node.id, "tags", tagScan.kinds));
+    }
+  }
+
   return {
     nodes: [...containers.nodes.values(), ...nodes],
     edges,
     findings,
     meta: { generatedAt: new Date(0).toISOString(), source: SOURCE, provider: "aws" },
   };
+}
+
+/**
+ * True when `token` appears in `haystack` as a delimited run (bounded by a
+ * non-alphanumeric character or the string ends), not merely as a substring.
+ * Keeps name-based dataflow inference from firing on incidental substrings.
+ */
+function mentionsToken(haystack: string, token: string): boolean {
+  if (token.length < 4) return false;
+  const esc = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^A-Za-z0-9])${esc}([^A-Za-z0-9]|$)`).test(haystack);
 }
 
 /** Container node types — never dataflow reference targets. */

@@ -103,3 +103,252 @@ test("detects plaintext secrets in user-data and tags, never storing the value",
   );
   assert.equal(inst.tags["DB_PASSWORD"], "[redacted-secret]");
 });
+
+test("IAM lens: external trust in assume_role_policy raises a critical finding", () => {
+  const state = {
+    version: 4,
+    resources: [
+      {
+        mode: "managed",
+        type: "aws_iam_role",
+        name: "admin",
+        instances: [
+          {
+            attributes: {
+              arn: "arn:aws:iam::123456789012:role/OrgAdmin",
+              id: "OrgAdmin",
+              name: "OrgAdmin",
+              assume_role_policy: JSON.stringify({
+                Version: "2012-10-17",
+                Statement: [
+                  {
+                    Effect: "Allow",
+                    Principal: { AWS: "arn:aws:iam::999988887777:root" },
+                    Action: "sts:AssumeRole",
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const graph = terraformAdapter.toGraph(state);
+  // Structurally intact even with the synthesized external-principal node.
+  assert.deepEqual(checkReferentialIntegrity(graph), []);
+  const f = graph.findings.find((f) => f.kind === "external-can-assume");
+  assert.ok(f, "expected an external-can-assume finding");
+  assert.equal(f!.severity, "critical");
+  const edge = graph.edges.find(
+    (e) => e.lens === "iam" && e.attributes["external"] === true,
+  );
+  assert.ok(edge, "expected an external can-assume iam edge");
+});
+
+test("IAM lens: internal can-assume needs BOTH trust and identity", () => {
+  const targetArn = "arn:aws:iam::123456789012:role/deploy";
+  const userArn = "arn:aws:iam::123456789012:user/ci";
+  const state = {
+    version: 4,
+    resources: [
+      {
+        mode: "managed",
+        type: "aws_iam_role",
+        name: "deploy",
+        instances: [
+          {
+            attributes: {
+              arn: targetArn,
+              id: "deploy",
+              name: "deploy",
+              assume_role_policy: JSON.stringify({
+                Statement: [
+                  {
+                    Effect: "Allow",
+                    Principal: { AWS: userArn },
+                    Action: "sts:AssumeRole",
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      },
+      {
+        mode: "managed",
+        type: "aws_iam_user",
+        name: "ci",
+        instances: [{ attributes: { arn: userArn, id: "ci", name: "ci" } }],
+      },
+      {
+        mode: "managed",
+        type: "aws_iam_user_policy",
+        name: "ci-assume",
+        instances: [
+          {
+            attributes: {
+              user: "ci",
+              policy: JSON.stringify({
+                Statement: [
+                  {
+                    Effect: "Allow",
+                    Action: "sts:AssumeRole",
+                    Resource: targetArn,
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const graph = terraformAdapter.toGraph(state);
+  assert.ok(graph.nodes.some((n) => n.type === "aws::iam::user"));
+  const edge = graph.edges.find(
+    (e) => e.lens === "iam" && e.source === userArn && e.target === targetArn,
+  );
+  assert.ok(edge, "expected an internal can-assume edge");
+  assert.equal(edge!.attributes["identityConfirmed"], true);
+});
+
+test("dataflow lens: an SG-to-SG ingress rule becomes a talks-to edge", () => {
+  const webArn = "arn:aws:ec2:us-east-1:123456789012:instance/i-web";
+  const dbArn = "arn:aws:ec2:us-east-1:123456789012:instance/i-db";
+  const state = {
+    version: 4,
+    resources: [
+      {
+        mode: "managed",
+        type: "aws_security_group",
+        name: "web",
+        instances: [
+          {
+            attributes: {
+              arn: "arn:aws:ec2:us-east-1:123456789012:security-group/sg-web",
+              id: "sg-web",
+              name: "web-sg",
+            },
+          },
+        ],
+      },
+      {
+        mode: "managed",
+        type: "aws_security_group",
+        name: "db",
+        instances: [
+          {
+            attributes: {
+              arn: "arn:aws:ec2:us-east-1:123456789012:security-group/sg-db",
+              id: "sg-db",
+              name: "db-sg",
+              ingress: [
+                {
+                  from_port: 5432,
+                  to_port: 5432,
+                  protocol: "tcp",
+                  security_groups: ["sg-web"],
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        mode: "managed",
+        type: "aws_instance",
+        name: "web",
+        instances: [
+          {
+            attributes: {
+              arn: webArn,
+              id: "i-web",
+              vpc_security_group_ids: ["sg-web"],
+              tags: { Name: "web" },
+            },
+          },
+        ],
+      },
+      {
+        mode: "managed",
+        type: "aws_instance",
+        name: "db",
+        instances: [
+          {
+            attributes: {
+              arn: dbArn,
+              id: "i-db",
+              vpc_security_group_ids: ["sg-db"],
+              tags: { Name: "db" },
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const graph = terraformAdapter.toGraph(state);
+  const flow = graph.edges.find(
+    (e) =>
+      e.lens === "dataflow" &&
+      e.relationship === "talks-to" &&
+      e.attributes["ports"] === "5432",
+  );
+  assert.ok(flow, "expected an SG-derived dataflow edge");
+  assert.equal(flow!.source, webArn);
+  assert.equal(flow!.target, dbArn);
+});
+
+test("network lens: a 0.0.0.0/0 ingress rule flags internet exposure", () => {
+  const webArn = "arn:aws:ec2:us-east-1:123456789012:instance/i-web";
+  const state = {
+    version: 4,
+    resources: [
+      {
+        mode: "managed",
+        type: "aws_security_group",
+        name: "web",
+        instances: [
+          {
+            attributes: {
+              arn: "arn:aws:ec2:us-east-1:123456789012:security-group/sg-web",
+              id: "sg-web",
+              name: "web-sg",
+              ingress: [
+                {
+                  from_port: 443,
+                  to_port: 443,
+                  protocol: "tcp",
+                  cidr_blocks: ["0.0.0.0/0"],
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        mode: "managed",
+        type: "aws_instance",
+        name: "web",
+        instances: [
+          {
+            attributes: {
+              arn: webArn,
+              id: "i-web",
+              vpc_security_group_ids: ["sg-web"],
+              tags: { Name: "web" },
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const graph = terraformAdapter.toGraph(state);
+  const exposed = graph.edges.find(
+    (e) => e.attributes["internetFacing"] === true,
+  );
+  assert.ok(exposed, "expected an internet-facing edge");
+  assert.equal(exposed!.lens, "network");
+  assert.equal(exposed!.target, webArn);
+  assert.notEqual(exposed!.source, exposed!.target); // never a self-loop
+});

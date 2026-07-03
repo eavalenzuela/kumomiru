@@ -13,6 +13,7 @@ const TYPE_LABELS: Record<string, string> = {
   "aws::dynamodb::table": "DynamoDB table",
   "aws::secretsmanager::secret": "Secrets Manager secret",
   "aws::iam::role": "IAM role",
+  "aws::iam::user": "IAM user",
   "aws::iam::external-principal": "External principal",
 };
 

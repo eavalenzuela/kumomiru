@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Graph } from "@kumomiru/graph";
 import {
   fetchSample,
   postTerraform,
   postLive,
+  leastPrivilegePolicyUrl,
   type LiveCredentials,
 } from "../lib/api.js";
 
@@ -27,6 +28,17 @@ export function DataSourcePanel({ onLoad, onClose }: DataSourcePanelProps) {
   const [tab, setTab] = useState<Tab>("terraform");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Move focus into the dialog on open and let Escape dismiss it (a11y).
+  const modalRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    modalRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   // Terraform inputs.
   const [tfText, setTfText] = useState("");
@@ -101,7 +113,10 @@ export function DataSourcePanel({ onLoad, onClose }: DataSourcePanelProps) {
       <div
         className="modal"
         role="dialog"
+        aria-modal="true"
         aria-label="Load data"
+        ref={modalRef}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-head">
@@ -178,7 +193,14 @@ export function DataSourcePanel({ onLoad, onClose }: DataSourcePanelProps) {
                 Read-only discovery. Credentials are sent once over TLS and{" "}
                 <strong>never stored</strong>. Prefer short-lived STS session
                 tokens. The role needs no <code>secretsmanager:GetSecretValue</code>
-                — kumomiru never reads secret values.
+                — kumomiru never reads secret values.{" "}
+                <a
+                  href={leastPrivilegePolicyUrl}
+                  download="kumomiru-readonly-policy.json"
+                >
+                  Download the exact read-only IAM policy
+                </a>
+                .
               </p>
               <label className="ds-field">
                 <span>Access key ID</span>

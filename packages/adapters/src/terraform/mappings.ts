@@ -111,6 +111,12 @@ export const NODE_MAPPINGS: Record<string, NodeMapping> = {
     fallbackParent: "account",
     attributes: () => ({}),
   },
+  aws_iam_user: {
+    nodeType: "aws::iam::user",
+    name: (a) => str(a["name"]) || str(a["user_name"]),
+    fallbackParent: "account",
+    attributes: () => ({}),
+  },
   aws_security_group: {
     nodeType: "aws::ec2::security-group",
     name: (a) => str(a["name"]),

@@ -1,13 +1,24 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   runLiveDiscovery,
   type AwsCredentials,
   type DiscoveryClientFactory,
 } from "@kumomiru/adapters";
-import { checkReferentialIntegrity } from "@kumomiru/graph";
+import { checkReferentialIntegrity, redactGraph } from "@kumomiru/graph";
 import { makeSdkClient } from "../aws/sdkClient.js";
 import { redactObject } from "../redact.js";
+
+/**
+ * Whether the caller asked for a value-redacted (share-safe) map via a
+ * `?redacted` query flag (`?redacted`, `?redacted=1`, or `?redacted=true`).
+ * Shared by every map route so "redacted" means the same thing everywhere.
+ */
+export function wantsRedacted(request: FastifyRequest): boolean {
+  const q = request.query as Record<string, unknown> | undefined;
+  const v = q?.["redacted"];
+  return v === "" || v === "1" || v === "true";
+}
 
 /**
  * Convert a thrown value into a plain, log-safe object: Error's message/name are
@@ -77,7 +88,7 @@ export function registerLiveRoute(
       if (problems.length > 0) {
         return reply.status(422).send({ error: "graph_integrity", problems });
       }
-      return graph;
+      return wantsRedacted(request) ? redactGraph(graph) : graph;
     } catch (err) {
       // An SDK error can carry request context (headers, partial creds) on its
       // enumerable properties, which Fastify's path-based redaction does not

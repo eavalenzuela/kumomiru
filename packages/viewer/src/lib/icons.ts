@@ -31,6 +31,9 @@ const GLYPHS: Record<string, string> = {
   // IAM role — a shield with a check.
   "aws::iam::role":
     '<path d="M12 3.5 L19 6 V11 C19 15.6 16 18.8 12 20.5 C8 18.8 5 15.6 5 11 V6 Z" fill="none" stroke="COL" stroke-width="1.8"/><path d="M9 11.5 L11.2 13.7 L15.2 9.2" fill="none" stroke="COL" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+  // IAM user — a person (head + shoulders).
+  "aws::iam::user":
+    '<circle cx="12" cy="8" r="3.4" fill="none" stroke="COL" stroke-width="1.8"/><path d="M5.5 19 a6.5 6.5 0 0 1 13 0" fill="none" stroke="COL" stroke-width="1.8" stroke-linecap="round"/>',
   // External principal — a globe (the IAM analog of internet exposure).
   "aws::iam::external-principal":
     '<circle cx="12" cy="12" r="8" fill="none" stroke="COL" stroke-width="1.8"/><ellipse cx="12" cy="12" rx="3.4" ry="8" fill="none" stroke="COL" stroke-width="1.5"/><line x1="4" y1="12" x2="20" y2="12" stroke="COL" stroke-width="1.5"/><line x1="5.2" y1="8" x2="18.8" y2="8" stroke="COL" stroke-width="1.2"/><line x1="5.2" y1="16" x2="18.8" y2="16" stroke="COL" stroke-width="1.2"/>',
@@ -50,6 +53,7 @@ const ICON_COLOR: Record<string, string> = {
   "aws::dynamodb::table": "#1d4ed8",
   "aws::secretsmanager::secret": "#dc2626",
   "aws::iam::role": "#7c3aed",
+  "aws::iam::user": "#4f46e5",
   "aws::iam::external-principal": "#be123c",
   "aws::ec2::internet-gateway": "#059669",
   "aws::ec2::security-group": "#475569",

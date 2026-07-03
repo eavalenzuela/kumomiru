@@ -54,3 +54,35 @@ test("POST /map/terraform rejects invalid state with 400", async () => {
   assert.equal(res.json().error, "invalid_terraform_state");
   await app.close();
 });
+
+test("GET /sample?redacted=1 strips data values but preserves topology", async () => {
+  const app = buildApp({ logger: false });
+  const full = (await app.inject({ method: "GET", url: "/sample" })).json();
+  const red = (
+    await app.inject({ method: "GET", url: "/sample?redacted=1" })
+  ).json();
+  parseGraph(red); // still schema-valid
+  // Same node/edge counts — redaction is about values, not topology.
+  assert.equal(red.nodes.length, full.nodes.length);
+  assert.equal(red.edges.length, full.edges.length);
+  const vpc = red.nodes.find((n) => n.type === "aws::ec2::vpc");
+  // cidrBlock is a free-form value attribute → dropped; tag values → blanked.
+  assert.equal(vpc.attributes.cidrBlock, undefined);
+  assert.equal(vpc.tags.Name, "[redacted]");
+  await app.close();
+});
+
+test("GET /policy/least-privilege serves a read-only policy without GetSecretValue", async () => {
+  const app = buildApp({ logger: false });
+  const res = await app.inject({
+    method: "GET",
+    url: "/policy/least-privilege",
+  });
+  assert.equal(res.statusCode, 200);
+  const actions = res.json().Statement[0].Action;
+  assert.ok(actions.includes("ec2:DescribeInstances"));
+  assert.ok(actions.includes("iam:GetAccountAuthorizationDetails"));
+  // The whole point: the scan role cannot read secret values.
+  assert.ok(!actions.some((a) => a.toLowerCase().includes("getsecretvalue")));
+  await app.close();
+});

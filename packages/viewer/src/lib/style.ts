@@ -27,6 +27,7 @@ const RESOURCE_ACCENT: Record<string, string> = {
   "aws::dynamodb::table": "#2563eb",
   "aws::secretsmanager::secret": "#dc2626",
   "aws::iam::role": "#7c3aed",
+  "aws::iam::user": "#6366f1",
   "aws::iam::external-principal": "#be123c",
   "aws::ec2::internet-gateway": "#10b981",
   "aws::ec2::security-group": "#64748b",

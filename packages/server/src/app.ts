@@ -1,4 +1,7 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyRequest,
+} from "fastify";
 import {
   terraformAdapter,
   type DiscoveryClientFactory,
@@ -6,10 +9,12 @@ import {
 import {
   sampleGraph,
   checkReferentialIntegrity,
+  redactGraph,
   type Graph,
 } from "@kumomiru/graph";
 import { REDACT_PATHS } from "./redact.js";
-import { registerLiveRoute } from "./routes/live.js";
+import { registerLiveRoute, wantsRedacted } from "./routes/live.js";
+import { registerPolicyRoute } from "./routes/policy.js";
 
 export interface BuildAppOptions {
   /** Pass false in tests to silence logging. */
@@ -44,7 +49,13 @@ export function buildApp(opts: BuildAppOptions = {}): FastifyInstance {
   app.get("/health", async () => ({ status: "ok" }));
 
   // Zero-setup data source for the viewer: the hand-authored sample graph.
-  app.get("/sample", async (): Promise<Graph> => sampleGraph);
+  // `?redacted=1` strips data values (DESIGN.md §6B) via the shared redactGraph,
+  // so the server can hand out a share-safe map, not just the viewer.
+  app.get(
+    "/sample",
+    async (request: FastifyRequest): Promise<Graph> =>
+      wantsRedacted(request) ? redactGraph(sampleGraph) : sampleGraph,
+  );
 
   /**
    * POST /map/terraform
@@ -71,12 +82,15 @@ export function buildApp(opts: BuildAppOptions = {}): FastifyInstance {
         .send({ error: "graph_integrity", problems });
     }
 
-    return graph;
+    return wantsRedacted(request) ? redactGraph(graph) : graph;
   });
 
   // POST /map/live — live read-only AWS discovery (in-memory creds, dropped
   // after the run).
   registerLiveRoute(app, opts.discoveryClientFactory);
+
+  // GET /policy/least-privilege — the exact read-only policy a scan role needs.
+  registerPolicyRoute(app);
 
   return app;
 }

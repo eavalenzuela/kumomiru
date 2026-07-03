@@ -17,8 +17,10 @@ interface InspectorPanelProps {
   findings: Finding[];
   connections: Connection[];
   onSelectNode: (id: string) => void;
-  /** Spotlight every principal that can reach this node (IAM reachability). */
+  /** Spotlight every principal that can reach this node (reverse IAM reach). */
   onTrace?: (id: string) => void;
+  /** Spotlight everything this node can reach (forward IAM reach). */
+  onTraceForward?: (id: string) => void;
   onClose: () => void;
 }
 
@@ -43,6 +45,7 @@ export function InspectorPanel({
   connections,
   onSelectNode,
   onTrace,
+  onTraceForward,
   onClose,
 }: InspectorPanelProps) {
   const nodeFindings = [...findings].sort(
@@ -82,15 +85,29 @@ export function InspectorPanel({
         )}
       </dl>
 
-      {onTrace && (
-        <button
-          type="button"
-          className="trace-btn"
-          onClick={() => onTrace(node.id)}
-          title="Highlight every principal that can reach this node over IAM edges"
-        >
-          ⟲ Who can reach this?
-        </button>
+      {(onTrace || onTraceForward) && (
+        <div className="trace-actions">
+          {onTrace && (
+            <button
+              type="button"
+              className="trace-btn"
+              onClick={() => onTrace(node.id)}
+              title="Highlight every principal that can reach this node over IAM edges"
+            >
+              ⟲ Who can reach this?
+            </button>
+          )}
+          {onTraceForward && (
+            <button
+              type="button"
+              className="trace-btn"
+              onClick={() => onTraceForward(node.id)}
+              title="Highlight everything this node can reach over IAM edges"
+            >
+              ⟳ What can this reach?
+            </button>
+          )}
+        </div>
       )}
 
       {nodeFindings.length > 0 && (
