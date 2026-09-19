@@ -16,7 +16,7 @@ Guidance for Claude Code when working in this repo.
 
 ## Toolchain
 
-- Node is **v20** (not 22); npm only by default. pnpm is **not** global and
+- Node is **v22** (verified 2026-09-19; was v20 earlier). npm only by default. pnpm is **not** global and
   corepack can't symlink into `/usr/bin`. pnpm 9.15.0 lives in `~/.local/bin`
   (installed via `corepack enable --install-directory ~/.local/bin pnpm`).
   Prefix shell calls that use pnpm with `export PATH="$HOME/.local/bin:$PATH"`.
