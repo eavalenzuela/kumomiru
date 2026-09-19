@@ -12,9 +12,21 @@
  * feed it the same projected statements.
  */
 
+/** A principal named by a resource or trust policy statement. */
+export interface PolicyPrincipal {
+  /** `*` is the anonymous/public principal. */
+  type: "aws" | "service" | "federated" | "canonical-user" | "*";
+  /** ARN, account id, service name, or `*`. */
+  value: string;
+  /** From a NotPrincipal element: everyone except. Treated as public. */
+  negated?: boolean;
+}
+
 /** Allow/Deny statement projected to exactly what we evaluate. */
 export interface PolicyStatement {
   effect: "Allow" | "Deny";
+  /** Present on resource and trust policies only; identity policies have none. */
+  principals?: PolicyPrincipal[];
   /** Actions this statement applies to. Globs (`*`, `?`) are expanded. */
   actions?: string[];
   /** Inverse of `actions`: matches every action NOT listed. */
@@ -74,6 +86,21 @@ function resourceMatches(stmt: PolicyStatement, resource: string): boolean {
     return !stmt.notResources.some((r) => globToRegExp(r, "").test(resource));
   }
   return false;
+}
+
+/**
+ * Whether a statement's actions cover `action` (exported for the
+ * resource-policy pass, which needs the action test without the resource
+ * test: a resource policy's implicit resource is the thing it is attached to).
+ */
+export function statementCoversAction(stmt: PolicyStatement, action: string): boolean {
+  return actionMatches(stmt, action);
+}
+
+/** Whether a statement's resources cover `resource`, treating an absent Resource as "this resource". */
+export function statementCoversResource(stmt: PolicyStatement, resource: string): boolean {
+  if (!stmt.resources && !stmt.notResources) return true;
+  return resourceMatches(stmt, resource);
 }
 
 /**

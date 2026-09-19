@@ -25,6 +25,21 @@ const GLYPHS: Record<string, string> = {
   // DynamoDB — a stacked database.
   "aws::dynamodb::table":
     '<ellipse cx="12" cy="6" rx="7" ry="2.4" fill="none" stroke="COL" stroke-width="1.7"/><path d="M5 6 V18 C5 19.3 8.1 20.3 12 20.3 C15.9 20.3 19 19.3 19 18 V6" fill="none" stroke="COL" stroke-width="1.7"/><path d="M5 10 C5 11.3 8.1 12.3 12 12.3 C15.9 12.3 19 11.3 19 10" fill="none" stroke="COL" stroke-width="1.4"/><path d="M5 14 C5 15.3 8.1 16.3 12 16.3 C15.9 16.3 19 15.3 19 14" fill="none" stroke="COL" stroke-width="1.4"/>',
+  // S3 bucket — a bucket silhouette.
+  "aws::s3::bucket":
+    '<path d="M5 6 L7 19.5 H17 L19 6" fill="none" stroke="COL" stroke-width="1.8" stroke-linejoin="round"/><ellipse cx="12" cy="6" rx="7" ry="2.2" fill="none" stroke="COL" stroke-width="1.8"/><line x1="7.5" y1="12.5" x2="16.5" y2="12.5" stroke="COL" stroke-width="1.4"/>',
+  // KMS key — a key.
+  "aws::kms::key":
+    '<circle cx="8" cy="12" r="3.5" fill="none" stroke="COL" stroke-width="1.8"/><line x1="11.5" y1="12" x2="20" y2="12" stroke="COL" stroke-width="1.8"/><line x1="17" y1="12" x2="17" y2="15" stroke="COL" stroke-width="1.8"/><line x1="19.5" y1="12" x2="19.5" y2="14.5" stroke="COL" stroke-width="1.8"/>',
+  // EBS volume — a disk.
+  "aws::ec2::volume":
+    '<ellipse cx="12" cy="8" rx="7" ry="2.6" fill="none" stroke="COL" stroke-width="1.8"/><path d="M5 8 V16 C5 17.4 8.1 18.5 12 18.5 C15.9 18.5 19 17.4 19 16 V8" fill="none" stroke="COL" stroke-width="1.8"/>',
+  // EBS snapshot — a disk with a camera-like shutter mark.
+  "aws::ec2::snapshot":
+    '<ellipse cx="12" cy="9" rx="7" ry="2.4" fill="none" stroke="COL" stroke-width="1.6" stroke-dasharray="3 2"/><path d="M5 9 V15 C5 16.4 8.1 17.5 12 17.5 C15.9 17.5 19 16.4 19 15 V9" fill="none" stroke="COL" stroke-width="1.6" stroke-dasharray="3 2"/>',
+  // CloudTrail — a scroll / log.
+  "aws::cloudtrail::trail":
+    '<rect x="6" y="4" width="12" height="16" rx="1.5" fill="none" stroke="COL" stroke-width="1.8"/><line x1="9" y1="8.5" x2="15" y2="8.5" stroke="COL" stroke-width="1.5"/><line x1="9" y1="12" x2="15" y2="12" stroke="COL" stroke-width="1.5"/><line x1="9" y1="15.5" x2="13" y2="15.5" stroke="COL" stroke-width="1.5"/>',
   // Secrets Manager — a padlock.
   "aws::secretsmanager::secret":
     '<rect x="5.5" y="10.5" width="13" height="9" rx="1.8" fill="none" stroke="COL" stroke-width="1.8"/><path d="M8 10.5 V8 a4 4 0 0 1 8 0 v2.5" fill="none" stroke="COL" stroke-width="1.8"/><circle cx="12" cy="14.5" r="1.5" fill="COL"/><line x1="12" y1="15.5" x2="12" y2="17.5" stroke="COL" stroke-width="1.6"/>',
@@ -57,6 +72,11 @@ const ICON_COLOR: Record<string, string> = {
   "aws::iam::external-principal": "#be123c",
   "aws::ec2::internet-gateway": "#059669",
   "aws::ec2::security-group": "#475569",
+  "aws::s3::bucket": "#15803d",
+  "aws::kms::key": "#a16207",
+  "aws::ec2::volume": "#0284c7",
+  "aws::ec2::snapshot": "#0369a1",
+  "aws::cloudtrail::trail": "#7e22ce",
 };
 
 /** Wrap a glyph body in an <svg> and encode it as a data URI. */

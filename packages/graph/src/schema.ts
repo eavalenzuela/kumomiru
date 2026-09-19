@@ -127,6 +127,8 @@ export const GraphMetaSchema = z.object({
   snapshotId: z.string().optional(),
   /** The scan run that produced it, once stored. */
   scanId: z.string().optional(),
+  /** Collector capabilities the producer had; drives rule `not-assessed`. */
+  capabilities: z.array(z.string()).optional(),
 });
 
 export const GraphSchema = z.object({

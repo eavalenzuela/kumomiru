@@ -1,4 +1,5 @@
 import { DISCOVERY_ACTIONS } from "./client.js";
+import { PHASE3_ACTIONS } from "./collectors.js";
 import { REGION_ACTIONS } from "./regions.js";
 
 /**
@@ -16,7 +17,7 @@ export const LEAST_PRIVILEGE_POLICY = {
     {
       Sid: "KumomiruReadOnlyDiscovery",
       Effect: "Allow",
-      Action: [...DISCOVERY_ACTIONS, ...REGION_ACTIONS],
+      Action: [...new Set([...DISCOVERY_ACTIONS, ...REGION_ACTIONS, ...PHASE3_ACTIONS])].sort(),
       Resource: "*",
     },
   ],

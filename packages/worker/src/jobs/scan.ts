@@ -97,8 +97,10 @@ export async function runScan(
     // reconciled against lifecycle state (open / reopened / resolved /
     // suppressed). The diff is against the previous stored snapshot.
     const registry = deps.registry ?? defaultRegistry();
+    // The merged graph declares what its passes collected; that is what
+    // decides `not-assessed`, not a static list.
     const evaluation = evaluate(merged, registry, {
-      capabilities: deps.capabilities ?? DISCOVERY_CAPABILITIES,
+      capabilities: deps.capabilities ?? merged.meta.capabilities ?? DISCOVERY_CAPABILITIES,
     });
     const graph: Graph = { ...merged, findings: evaluation.findings };
     const prevMeta = db.snapshots.latestForAccount(account.id);

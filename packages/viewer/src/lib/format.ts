@@ -15,6 +15,11 @@ const TYPE_LABELS: Record<string, string> = {
   "aws::iam::role": "IAM role",
   "aws::iam::user": "IAM user",
   "aws::iam::external-principal": "External principal",
+  "aws::s3::bucket": "S3 bucket",
+  "aws::kms::key": "KMS key",
+  "aws::ec2::volume": "EBS volume",
+  "aws::ec2::snapshot": "EBS snapshot",
+  "aws::cloudtrail::trail": "CloudTrail trail",
 };
 
 /** "aws::ec2::instance" → "EC2 instance"; unknown types fall back to the tail. */

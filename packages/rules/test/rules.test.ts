@@ -80,7 +80,11 @@ test("evaluate: fails the offenders, passes the clean resources, deterministic i
   assert.deepEqual(passed("ec2.sg-unrestricted-unauthorized-ports"), ["sg-corp", "sg-web"]);
   assert.deepEqual(failed("ec2.subnet-auto-assign-public-ip"), ["subnet-pub"]);
   assert.deepEqual(failed("rds.instance-publicly-accessible"), ["db-pub"]);
-  assert.deepEqual(ev.notAssessedRules, []);
+  // Phase 2 rules need only the base capabilities; Phase 3 rules (which need
+  // collectors this fixture does not declare) are the ones left not-assessed.
+  for (const id of ["ec2.sg-unrestricted-ssh", "ec2.subnet-auto-assign-public-ip", "rds.instance-publicly-accessible"]) {
+    assert.ok(!ev.notAssessedRules.includes(id), id);
+  }
 
   const ssh = ev.findings.find((f) => f.ruleId === "ec2.sg-unrestricted-ssh" && f.nodeId === "sg-ssh")!;
   assert.equal(ssh.id, findingId("ec2.sg-unrestricted-ssh", "sg-ssh"));
@@ -131,8 +135,10 @@ test("controlStatuses: rolls results up per control for both frameworks", () => 
   assert.deepEqual(byId.get("EC2.13")!.failingResourceIds.sort(), ["sg-all", "sg-ssh"]);
   assert.equal(byId.get("EC2.13")!.pass, 2);
   assert.equal(byId.get("RDS.2")!.status, "fail");
-  assert.equal(byId.get("S3.1")!.status, "not-assessed", "unmapped control is visible as a gap");
-  assert.deepEqual(byId.get("S3.1")!.ruleIds, []);
+  assert.equal(byId.get("S3.1")!.status, "not-assessed", "mapped but its collector was absent → gap is visible");
+  assert.deepEqual(byId.get("S3.1")!.ruleIds, ["s3.account-public-access-block"]);
+  assert.equal(byId.get("ELB.1")!.status, "not-assessed", "unmapped control is visible as a gap");
+  assert.deepEqual(byId.get("ELB.1")!.ruleIds, []);
 
   const nist = controlStatuses("nist-csf-2", ev.results, reg);
   const ir = nist.find((c) => c.controlId === "PR.IR-01")!;

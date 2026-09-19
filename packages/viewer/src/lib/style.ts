@@ -31,6 +31,11 @@ const RESOURCE_ACCENT: Record<string, string> = {
   "aws::iam::external-principal": "#be123c",
   "aws::ec2::internet-gateway": "#10b981",
   "aws::ec2::security-group": "#64748b",
+  "aws::s3::bucket": "#16a34a",
+  "aws::kms::key": "#ca8a04",
+  "aws::ec2::volume": "#0ea5e9",
+  "aws::ec2::snapshot": "#0284c7",
+  "aws::cloudtrail::trail": "#9333ea",
 };
 
 export function buildStylesheet(): StylesheetStyle[] {

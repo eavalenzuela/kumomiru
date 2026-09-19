@@ -36,17 +36,29 @@ export type {
   DiscoveredSecret,
   DiscoveredRole,
   DiscoveredUser,
+  DiscoveredBucket,
+  DiscoveredVolume,
+  DiscoveredSnapshot,
+  DiscoveredKmsKey,
+  DiscoveredTrail,
+  CredentialReportRow,
+  AccountSummary,
+  RegionSettings,
 } from "./aws-live/client.js";
+export { OPTIONAL_CAPABILITIES } from "./aws-live/client.js";
 
-// IAM analysis pass (the shared "brain") + its policy evaluator.
+// IAM analysis passes (the shared "brain") + the policy evaluator.
 export { analyzeAssumeRole } from "./analysis/iam.js";
+export { analyzeResourceAccess } from "./analysis/resourceAccess.js";
+export type { AccessResource, ResourceAccessResult } from "./analysis/resourceAccess.js";
+export { projectPolicyDocument, conditionKeysOf, parsePolicyDoc } from "./common/policy-doc.js";
 export type {
   AnalyzedPrincipal,
   AssumeTrustEntry,
   IamAnalysisResult,
 } from "./analysis/iam.js";
 export { evaluate as evaluatePolicy } from "./analysis/policy.js";
-export type { PolicyStatement, Decision, EvalResult } from "./analysis/policy.js";
+export type { PolicyStatement, PolicyPrincipal, Decision, EvalResult } from "./analysis/policy.js";
 
 // Dataflow analysis pass (SG reachability + explicit references).
 export { analyzeDataflow } from "./analysis/dataflow.js";

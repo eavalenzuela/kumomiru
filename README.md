@@ -88,7 +88,7 @@ disable the pasted-credential and Terraform-upload routes.
 ## Develop
 
 ```sh
-pnpm test           # 130+ tests across graph, adapters, aws, rules, db, worker, server
+pnpm test           # 140+ tests across graph, adapters, aws, rules, db, worker, server
 pnpm typecheck
 pnpm policy:gen     # regenerate docs/least-privilege-policy.json after changing the policy
 ```

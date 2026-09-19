@@ -12,3 +12,4 @@ export {
   policyActions,
   deniedActionsPresent,
 } from "./policy.js";
+export { PHASE3_ACTIONS, PHASE3_CAPABILITIES, parseCredentialReport } from "./collectors.js";

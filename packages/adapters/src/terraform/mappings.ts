@@ -118,6 +118,42 @@ export const NODE_MAPPINGS: Record<string, NodeMapping> = {
     fallbackParent: "account",
     attributes: () => ({}),
   },
+  aws_s3_bucket: {
+    nodeType: "aws::s3::bucket",
+    name: (a) => str(a["bucket"]) || str(a["id"]),
+    fallbackParent: "region",
+    attributes: () => ({}),
+  },
+  aws_kms_key: {
+    nodeType: "aws::kms::key",
+    name: (a) => str(a["description"]) || str(a["key_id"]) || str(a["id"]),
+    fallbackParent: "region",
+    attributes: (a) =>
+      compact({
+        manager: "CUSTOMER",
+        enabled: bool(a["is_enabled"]) ?? true,
+        rotationEnabled: bool(a["enable_key_rotation"]) ?? false,
+      }),
+  },
+  aws_ebs_volume: {
+    nodeType: "aws::ec2::volume",
+    name: (a) => str((a["tags"] as Record<string, unknown> | undefined)?.["Name"]) || str(a["id"]),
+    fallbackParent: "region",
+    attributes: (a) => compact({ encrypted: bool(a["encrypted"]) ?? false, sizeGiB: num(a["size"]) }),
+  },
+  aws_cloudtrail: {
+    nodeType: "aws::cloudtrail::trail",
+    name: (a) => str(a["name"]),
+    fallbackParent: "account",
+    attributes: (a) =>
+      compact({
+        isMultiRegion: bool(a["is_multi_region_trail"]) ?? false,
+        isLogging: bool(a["enable_logging"]) ?? true,
+        logFileValidationEnabled: bool(a["enable_log_file_validation"]) ?? false,
+        managementEvents: true,
+        kmsEncrypted: Boolean(str(a["kms_key_id"])),
+      }),
+  },
   aws_security_group: {
     nodeType: "aws::ec2::security-group",
     name: (a) => str(a["name"]),

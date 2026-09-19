@@ -338,7 +338,52 @@ graphs in `packages/rules/test/fixtures`.
 
 ---
 
-### Phase 3 — Resource coverage and resource-policy IAM
+### Phase 3 — Resource coverage and resource-policy IAM (tranche A done, 2026-09-19)
+
+Landed: the collector split, the resource-policy pass, and tranche A. Tranche
+B is open. Specifics:
+
+- `discover.ts` is now an orchestrator over `aws-live/collectors/{network,
+  compute, database, serverless, storage, security, iam}.ts` sharing a
+  `CollectContext`; the existing 51 adapter tests passed unchanged across
+  the split.
+- New optional `DiscoveryClient` methods (all implemented by the SDK client):
+  `accountSummary`, `credentialReport`, `cloudTrails`, `regionSettings`,
+  `s3Buckets`, `ebsVolumes`, `ebsSnapshots`, `kmsKeys`; plus
+  `flowLogsEnabled` on VPCs, `storageEncrypted` on RDS, resource policy and
+  URL auth on Lambda, rotation and resource policy on secrets. A client
+  declares extra capabilities via `capabilities()`; `graph.meta.capabilities`
+  is the authoritative list the worker hands to the rule engine.
+- New node types: `aws::s3::bucket`, `aws::kms::key`, `aws::ec2::volume`,
+  `aws::ec2::snapshot`, `aws::cloudtrail::trail`. Account-level facts (root
+  MFA/keys, password policy, account PAB, multi-region trail) live on the
+  `aws::account` node; region-level facts (EBS default encryption, Config,
+  GuardDuty) on the `aws::region` node. Users carry credential-report fields.
+- `analysis/resourceAccess.ts`: `can-access` iam edges from resource
+  policies (S3, KMS, Lambda, Secrets Manager) with `public-resource` and
+  `external-can-access` findings; same-account root grants resolve through
+  identity policies. Deny statements are not modeled (documented). A
+  `regional` pass has no principals, so only public/external grants produce
+  edges there; the `all` and merged paths see both.
+- Shared `projectPolicyDocument` (adapters `common/policy-doc.ts`) parses
+  JSON, URL-encoded, or object documents with principals; the SDK client and
+  Terraform use it.
+- 25 new rules: IAM.3/4/5/7/8/9, S3.1/2/5/8/9, EC2.1/3/6/7, RDS.3, KMS.4,
+  CloudTrail.1/2/4, Config.1, GuardDuty.1, Lambda.1, SecretsManager.1, plus
+  adoption of `public-resource` / `external-can-access`. 30 rules total.
+- Policy: 34 new actions, all Describe/List/Get except
+  `iam:GenerateCredentialReport` (documented exception in the test; it
+  builds a metadata CSV). Still no `s3:GetObject`, `kms:Decrypt`,
+  `GetSecretValue`.
+- Terraform parity: `aws_s3_bucket`, `aws_kms_key`, `aws_ebs_volume`,
+  `aws_cloudtrail` mapped. Bucket policies from `aws_s3_bucket_policy` are
+  not yet linked to their bucket (needs a cross-resource pass).
+- **Not done (tranche B / later):** route tables, NAT, peering, NACLs, VPC
+  endpoints, EIPs; RDS clusters and snapshots; SSM parameter metadata;
+  ELBv2, EKS, ECS, SQS, SNS, DynamoDB via live, ECR, ASG/launch templates,
+  EFS, CloudFront, API Gateway. The FSBP catalogue lists IAM.6, ELB.1,
+  ECS.8, SQS.1, SNS.1 as visible gaps.
+
 
 **Goal.** Collect what FSBP controls actually need. Feed resource-based
 policies into the IAM brain so "who can read this secret" becomes true.

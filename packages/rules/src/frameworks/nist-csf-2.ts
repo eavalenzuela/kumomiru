@@ -19,5 +19,7 @@ export const NIST_CSF_2: Catalogue = {
     { id: "PR.DS-02", title: "The confidentiality, integrity, and availability of data-in-transit are protected" },
     { id: "PR.IR-01", title: "Networks and environments are protected from unauthorized logical access and usage" },
     { id: "DE.CM-01", title: "Networks and network services are monitored to find potentially adverse events" },
+    { id: "DE.CM-09", title: "Computing hardware and software, runtime environments, and their data are monitored to find potentially adverse events" },
+    { id: "PR.PS-01", title: "Configuration management practices are established and applied" },
   ],
 };

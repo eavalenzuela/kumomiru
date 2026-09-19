@@ -36,7 +36,10 @@ full design. pnpm monorepo under `packages/`:
 
 - `@kumomiru/graph` — the normalized graph spine (Zod schema = source of truth;
   types via `z.infer`).
-- `@kumomiru/adapters` — ingestion adapters (terraform-state first).
+- `@kumomiru/adapters` — ingestion adapters. Live discovery is split into
+  `aws-live/collectors/*`; IAM is two analysis passes (`analyzeAssumeRole`,
+  `analyzeResourceAccess`), never inline. `graph.meta.capabilities` says what
+  a scan collected.
 - `@kumomiru/aws` — the only place the AWS SDK is used; the least-privilege
   policy is generated from the actions declared there (`pnpm policy:gen`).
 - `@kumomiru/rules` — posture rules (typed fns over Graph), FSBP + NIST CSF 2.0
@@ -48,4 +51,4 @@ full design. pnpm monorepo under `packages/`:
   the host identity. Never holds a long-lived key.
 - `@kumomiru/server` — Fastify API; never persists credentials. Shares the
   SQLite file with the worker via `KUMOMIRU_DB_PATH`.
-- `docs/cspm-roadmap.md` — the CSPM conversion plan; Phases 0–2 are done.
+- `docs/cspm-roadmap.md` — the CSPM conversion plan; Phases 0–2 and Phase 3 tranche A are done.

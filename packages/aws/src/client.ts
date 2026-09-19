@@ -39,6 +39,17 @@ import type {
   DiscoveredUser,
   PolicyStatement,
 } from "@kumomiru/adapters";
+import {
+  auditCollector,
+  ebsCollector,
+  iamAccountCollector,
+  kmsCollector,
+  lambdaPolicyCollector,
+  regionSettingsCollector,
+  s3Collector,
+  secretPolicyCollector,
+  PHASE3_CAPABILITIES,
+} from "./collectors.js";
 
 /**
  * The real, SDK-backed read-only DiscoveryClient. Every command here is
@@ -132,6 +143,16 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
   const sm = new SecretsManagerClient(cfg);
   const sts = new STSClient(cfg);
 
+  // Phase 3 collectors (optional DiscoveryClient methods).
+  const s3 = s3Collector(cfg, () => identity().then((i) => i.account));
+  const ebs = ebsCollector(cfg);
+  const kms = kmsCollector(cfg);
+  const audit = auditCollector(cfg);
+  const regionSettings = regionSettingsCollector(ebs, audit);
+  const iamAccount = iamAccountCollector(cfg, () => identity().then((i) => i.account));
+  const lambdaPolicy = lambdaPolicyCollector(cfg);
+  const secretPolicy = secretPolicyCollector(cfg);
+
   /**
    * GetAccountAuthorizationDetails is the IAM collection backbone (DESIGN.md
    * §5): one paginated, read-only call returns every role/user with its inline
@@ -174,9 +195,18 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
         (o) => o.Vpcs,
         (o) => o.NextToken,
       );
+      // Flow logs are a per-VPC posture fact (FSBP EC2.6); one Describe call
+      // covers the region. A failure leaves the attribute unset, never false.
+      let flowLogged: Set<string> | undefined;
+      try {
+        flowLogged = await ebs.flowLogVpcIds();
+      } catch {
+        flowLogged = undefined;
+      }
       return vpcs.map((v) => ({
         vpcId: v.VpcId ?? "",
         ...(v.CidrBlock ? { cidrBlock: v.CidrBlock } : {}),
+        ...(flowLogged ? { flowLogsEnabled: flowLogged.has(v.VpcId ?? "") } : {}),
         tags: tagsToRecord(v.Tags),
       }));
     },
@@ -303,6 +333,7 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
         ...(d.Engine ? { engine: d.Engine } : {}),
         ...(d.Endpoint?.Port ? { port: d.Endpoint.Port } : {}),
         publiclyAccessible: d.PubliclyAccessible ?? false,
+        storageEncrypted: d.StorageEncrypted ?? false,
         subnetIds: (d.DBSubnetGroup?.Subnets ?? [])
           .map((s) => s.SubnetIdentifier ?? "")
           .filter(Boolean),
@@ -333,6 +364,20 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
           tags: {},
         });
       }
+      // Resource policy + function URL auth (FSBP Lambda.1): per function,
+      // bounded concurrency; a per-function failure leaves the fields unset.
+      await mapConcurrent(out, USER_DATA_CONCURRENCY, async (f) => {
+        try {
+          const [resourcePolicy, urlAuthTypes] = await Promise.all([
+            lambdaPolicy.resourcePolicy(f.functionName),
+            lambdaPolicy.urlAuthTypes(f.functionName),
+          ]);
+          f.resourcePolicy = resourcePolicy;
+          f.urlAuthTypes = urlAuthTypes;
+        } catch {
+          // leave unset
+        }
+      });
       return out;
     },
 
@@ -342,11 +387,24 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
         (o) => o.SecretList,
         (o) => o.NextToken,
       );
-      return list.map((s) => ({
+      const out: DiscoveredSecret[] = list.map((s) => ({
         arn: s.ARN ?? "",
         name: s.Name ?? "",
+        rotationEnabled: s.RotationEnabled ?? false,
         tags: tagsToRecord(s.Tags),
       }));
+      // Resource policy (who may read it) — metadata only; the value is never
+      // fetched and the scan role has no GetSecretValue.
+      await mapConcurrent(out, USER_DATA_CONCURRENCY, async (sec) => {
+        try {
+          const d = await secretPolicy.details(sec.arn);
+          sec.rotationEnabled = d.rotationEnabled;
+          sec.resourcePolicy = d.resourcePolicy;
+        } catch {
+          // leave unset
+        }
+      });
+      return out;
     },
 
     roles: async (): Promise<DiscoveredRole[]> => {
@@ -377,6 +435,17 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
         tags: tagsToRecord(u.Tags),
       }));
     },
+
+    // --- Phase 3 optional collectors -----------------------------------------
+    capabilities: () => [...PHASE3_CAPABILITIES],
+    accountSummary: () => iamAccount.accountSummary(),
+    credentialReport: () => iamAccount.credentialReport(),
+    cloudTrails: () => audit.cloudTrails(),
+    regionSettings: () => regionSettings.regionSettings(),
+    s3Buckets: () => s3.s3Buckets(),
+    ebsVolumes: () => ebs.ebsVolumes(),
+    ebsSnapshots: () => ebs.ebsSnapshots(),
+    kmsKeys: () => kms.kmsKeys(),
   };
 }
 

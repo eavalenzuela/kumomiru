@@ -37,4 +37,33 @@ export const externalCanAssume: AdoptRule = {
   },
 };
 
-export const nativeRules: AdoptRule[] = [plaintextSecret, externalCanAssume];
+export const publicResource: AdoptRule = {
+  id: "kumomiru.public-resource",
+  version: 1,
+  adopts: "public-resource",
+  title: "Resource policy grants access to everyone",
+  severity: "critical",
+  kind: "public-resource",
+  controls: [
+    { framework: "nist-csf-2", id: "PR.AA-05" },
+    { framework: "nist-csf-2", id: "PR.IR-01" },
+  ],
+  remediation: {
+    text: "Replace the \"*\" principal with the specific accounts, roles, or services that need access, or gate it with a narrowing condition such as aws:PrincipalOrgID or aws:SourceArn.",
+  },
+};
+
+export const externalCanAccess: AdoptRule = {
+  id: "kumomiru.external-can-access",
+  version: 1,
+  adopts: "external-can-access",
+  title: "External principal can access a resource",
+  severity: "high",
+  kind: "external-can-access",
+  controls: [{ framework: "nist-csf-2", id: "PR.AA-05" }],
+  remediation: {
+    text: "Confirm the external account is intended. If so, scope the grant to a specific role and add a condition; if not, remove the principal from the resource policy.",
+  },
+};
+
+export const nativeRules: AdoptRule[] = [plaintextSecret, externalCanAssume, publicResource, externalCanAccess];

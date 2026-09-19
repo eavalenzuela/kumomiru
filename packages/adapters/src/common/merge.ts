@@ -18,7 +18,9 @@ export function mergeGraphs(
   const nodes = new Map<string, Graph["nodes"][number]>();
   const edges = new Map<string, Graph["edges"][number]>();
   const findings = new Map<string, Graph["findings"][number]>();
+  const capabilities = new Set<string>(meta.capabilities ?? []);
   for (const g of graphs) {
+    for (const c of g.meta.capabilities ?? []) capabilities.add(c);
     for (const n of g.nodes) if (!nodes.has(n.id)) nodes.set(n.id, n);
     for (const e of g.edges) if (!edges.has(e.id)) edges.set(e.id, e);
     for (const f of g.findings) if (!findings.has(f.id)) findings.set(f.id, f);
@@ -27,6 +29,6 @@ export function mergeGraphs(
     nodes: [...nodes.values()],
     edges: [...edges.values()],
     findings: [...findings.values()],
-    meta: { ...meta, provider: "aws" },
+    meta: { ...meta, provider: "aws", capabilities: [...capabilities].sort() },
   };
 }

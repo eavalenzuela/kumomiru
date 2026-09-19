@@ -15,6 +15,8 @@ import type { PolicyStatement } from "../analysis/policy.js";
 export interface DiscoveredVpc {
   vpcId: string;
   cidrBlock?: string;
+  /** Whether at least one VPC flow log is configured (from DescribeFlowLogs). */
+  flowLogsEnabled?: boolean;
   tags: Record<string, string>;
 }
 
@@ -68,6 +70,7 @@ export interface DiscoveredDbInstance {
   engine?: string;
   port?: number;
   publiclyAccessible?: boolean;
+  storageEncrypted?: boolean;
   subnetIds: string[];
   tags: Record<string, string>;
 }
@@ -77,14 +80,126 @@ export interface DiscoveredFunction {
   runtime?: string;
   /** Env var keys+values; values scanned for secrets, never stored raw. */
   environment: Record<string, string>;
+  /** Resource-based policy statements (lambda:GetPolicy), if collected. */
+  resourcePolicy?: PolicyStatement[];
+  /** Auth types of any function URLs ("NONE" means unauthenticated). */
+  urlAuthTypes?: string[];
   tags: Record<string, string>;
 }
 
 export interface DiscoveredSecret {
   arn: string;
   name: string;
+  rotationEnabled?: boolean;
+  /** Resource policy statements, if collected. */
+  resourcePolicy?: PolicyStatement[];
   /** We list the secret but NEVER fetch its value. */
   tags: Record<string, string>;
+}
+
+// --- Phase 3 resources (all optional on the client) ---------------------------
+
+export interface DiscoveredBucket {
+  name: string;
+  arn: string;
+  region: string;
+  publicAccessBlock?: {
+    blockPublicAcls: boolean;
+    ignorePublicAcls: boolean;
+    blockPublicPolicy: boolean;
+    restrictPublicBuckets: boolean;
+  };
+  /** From GetBucketPolicyStatus; AWS's own verdict on the policy. */
+  policyIsPublic?: boolean;
+  policyStatements?: PolicyStatement[];
+  /** e.g. "AES256" | "aws:kms" | undefined when no default encryption. */
+  encryption?: string;
+  versioning?: boolean;
+  loggingEnabled?: boolean;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredVolume {
+  volumeId: string;
+  encrypted: boolean;
+  attachedInstanceIds: string[];
+  sizeGiB?: number;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredSnapshot {
+  snapshotId: string;
+  volumeId?: string;
+  encrypted: boolean;
+  /** createVolumePermission includes group "all". */
+  public: boolean;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredKmsKey {
+  keyId: string;
+  arn: string;
+  /** "AWS" for AWS-managed keys (rotation is AWS's job), "CUSTOMER" otherwise. */
+  manager: "AWS" | "CUSTOMER";
+  enabled: boolean;
+  rotationEnabled?: boolean;
+  policyStatements?: PolicyStatement[];
+  aliases: string[];
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredTrail {
+  name: string;
+  arn: string;
+  homeRegion?: string;
+  isMultiRegion: boolean;
+  isLogging: boolean;
+  logFileValidationEnabled: boolean;
+  kmsKeyId?: string;
+  /** Management events are recorded (read and write). */
+  managementEvents: boolean;
+}
+
+export interface CredentialReportRow {
+  /** `<root_account>` for the root user. */
+  user: string;
+  arn: string;
+  passwordEnabled: boolean;
+  passwordLastUsed?: string;
+  mfaActive: boolean;
+  accessKey1Active: boolean;
+  accessKey1LastRotated?: string;
+  accessKey1LastUsed?: string;
+  accessKey2Active: boolean;
+  accessKey2LastRotated?: string;
+  accessKey2LastUsed?: string;
+}
+
+export interface AccountSummary {
+  rootMfaEnabled: boolean;
+  rootAccessKeysPresent: boolean;
+  passwordPolicy: {
+    minimumLength: number;
+    requireSymbols: boolean;
+    requireNumbers: boolean;
+    requireUppercase: boolean;
+    requireLowercase: boolean;
+    maxAgeDays?: number;
+    reusePrevention?: number;
+  } | null;
+  /** Account-level S3 Public Access Block, all four flags. */
+  s3PublicAccessBlock: {
+    blockPublicAcls: boolean;
+    ignorePublicAcls: boolean;
+    blockPublicPolicy: boolean;
+    restrictPublicBuckets: boolean;
+  } | null;
+}
+
+export interface RegionSettings {
+  ebsEncryptionByDefault?: boolean;
+  configRecorderEnabled?: boolean;
+  guardDutyEnabled?: boolean;
 }
 
 export interface DiscoveredRole {
@@ -150,4 +265,37 @@ export interface DiscoveryClient {
    * valid (role-only) assume-role graph. The live SDK client implements it.
    */
   users?(): Promise<DiscoveredUser[]>;
+
+  // --- Optional Phase 3 collectors. The rule engine's `requires` vocabulary
+  // maps 1:1 to these; a client that lacks one leaves those rules
+  // `not-assessed`. `capabilities()` declares which extras a client provides.
+  capabilities?(): string[];
+  /** Global. */
+  accountSummary?(): Promise<AccountSummary>;
+  /** Global. */
+  credentialReport?(): Promise<CredentialReportRow[]>;
+  /** Global: every trail visible from the account (shadow trails included). */
+  cloudTrails?(): Promise<DiscoveredTrail[]>;
+  /** Regional. */
+  regionSettings?(): Promise<RegionSettings>;
+  /** Regional: buckets whose location is this client's region. */
+  s3Buckets?(): Promise<DiscoveredBucket[]>;
+  /** Regional. */
+  ebsVolumes?(): Promise<DiscoveredVolume[]>;
+  /** Regional: snapshots owned by this account. */
+  ebsSnapshots?(): Promise<DiscoveredSnapshot[]>;
+  /** Regional. */
+  kmsKeys?(): Promise<DiscoveredKmsKey[]>;
 }
+
+/** Capability names for the optional collectors, keyed by client method. */
+export const OPTIONAL_CAPABILITIES = {
+  accountSummary: "iam:account-summary",
+  credentialReport: "iam:credential-report",
+  cloudTrails: "cloudtrail:trail",
+  regionSettings: "account:region-settings",
+  s3Buckets: "s3:bucket",
+  ebsVolumes: "ec2:volume",
+  ebsSnapshots: "ec2:snapshot",
+  kmsKeys: "kms:key",
+} as const;
