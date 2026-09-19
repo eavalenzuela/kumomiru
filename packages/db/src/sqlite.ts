@@ -3,6 +3,7 @@ import BetterSqlite3 from "better-sqlite3";
 import type { Graph } from "@kumomiru/graph";
 
 import { MIGRATIONS } from "./migrations.js";
+import { diffRepo, findingRepo, metadataRepo, ruleResultRepo, suppressionRepo } from "./sqlite-lifecycle.js";
 import type {
   AccountRecord,
   AccountRepo,
@@ -49,6 +50,11 @@ export function openDatabase(path: string, opts: OpenOptions = {}): Database {
     snapshots: snapshotRepo(db, now),
     settings: settingsRepo(db),
     leases: leaseRepo(db, nowMs),
+    findings: findingRepo(db),
+    ruleResults: ruleResultRepo(db),
+    diffs: diffRepo(db),
+    suppressions: suppressionRepo(db, now),
+    metadata: metadataRepo(db, now),
     close: () => db.close(),
   };
 }

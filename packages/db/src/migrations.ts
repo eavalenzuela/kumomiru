@@ -60,4 +60,80 @@ export const MIGRATIONS: readonly string[] = [
     expires_at INTEGER NOT NULL
   );
   `,
+  // 0002_lifecycle — findings with lifecycle, rule results, diffs, suppressions, metadata
+  `
+  CREATE TABLE findings (
+    id               TEXT PRIMARY KEY,
+    account_id       TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    rule_id          TEXT,
+    source           TEXT NOT NULL DEFAULT 'native',
+    severity         TEXT NOT NULL,
+    kind             TEXT NOT NULL,
+    resource_id      TEXT,
+    resource_type    TEXT,
+    title            TEXT NOT NULL,
+    detail           TEXT NOT NULL,
+    controls_json    TEXT NOT NULL DEFAULT '[]',
+    remediation_json TEXT,
+    evidence_json    TEXT,
+    external_id      TEXT,
+    status           TEXT NOT NULL CHECK (status IN ('open','resolved','suppressed')),
+    first_seen_at    TEXT NOT NULL,
+    last_seen_at     TEXT NOT NULL,
+    resolved_at      TEXT,
+    last_snapshot_id TEXT NOT NULL,
+    suppression_id   TEXT
+  );
+  CREATE INDEX findings_account_status_sev ON findings(account_id, status, severity);
+  CREATE INDEX findings_rule ON findings(rule_id);
+
+  CREATE TABLE rule_results (
+    snapshot_id   TEXT NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+    rule_id       TEXT NOT NULL,
+    resource_id   TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    status        TEXT NOT NULL CHECK (status IN ('pass','fail','not-applicable','not-assessed')),
+    PRIMARY KEY (snapshot_id, rule_id, resource_id)
+  );
+  CREATE INDEX rule_results_rule_status ON rule_results(rule_id, status);
+
+  CREATE TABLE scan_diffs (
+    snapshot_id      TEXT PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
+    prev_snapshot_id TEXT,
+    diff_json        TEXT NOT NULL
+  );
+
+  CREATE TABLE suppressions (
+    id               TEXT PRIMARY KEY,
+    rule_id          TEXT NOT NULL,
+    resource_pattern TEXT NOT NULL,
+    account_id       TEXT,
+    reason           TEXT NOT NULL,
+    created_by       TEXT,
+    created_at       TEXT NOT NULL,
+    expires_at       TEXT,
+    revoked_at       TEXT
+  );
+
+  CREATE TABLE rules (
+    id                  TEXT PRIMARY KEY,
+    version             INTEGER NOT NULL,
+    title               TEXT NOT NULL,
+    severity            TEXT NOT NULL,
+    kind                TEXT NOT NULL,
+    resource_types_json TEXT NOT NULL,
+    requires_json       TEXT NOT NULL,
+    controls_json       TEXT NOT NULL,
+    remediation_json    TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+  );
+
+  CREATE TABLE controls (
+    framework   TEXT NOT NULL,
+    id          TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    version     TEXT NOT NULL,
+    PRIMARY KEY (framework, id)
+  );
+  `,
 ];

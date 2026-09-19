@@ -57,20 +57,58 @@ export const CloudEdgeSchema = z.object({
   attributes: z.record(z.unknown()).default({}),
 });
 
+/** Compliance frameworks a rule can map to. */
+export const FRAMEWORKS = ["fsbp", "nist-csf-2"] as const;
+export const FrameworkSchema = z.enum(FRAMEWORKS);
+
+/** A reference to one control in one framework, e.g. FSBP `EC2.13`. */
+export const ControlRefSchema = z.object({
+  framework: FrameworkSchema,
+  id: z.string().min(1),
+});
+
+/** Operator guidance. The tool never applies it. */
+export const RemediationSchema = z.object({
+  text: z.string(),
+  cli: z.string().optional(),
+  terraform: z.string().optional(),
+});
+
+/** Where a finding came from. */
+export const FINDING_SOURCES = ["native", "securityhub", "accessanalyzer", "drift"] as const;
+export const FindingSourceSchema = z.enum(FINDING_SOURCES);
+
 /**
  * A security observation surfaced to the user. Produced by the sanitization
- * layer ("plaintext secret detected") and later by the IAM pass
- * ("external principal can assume admin").
+ * layer ("plaintext secret detected"), the IAM pass ("external principal can
+ * assume admin"), and — since the CSPM conversion — the rule engine.
+ *
+ * Everything after `detail` is optional so ad-hoc graphs, the sample, and the
+ * viewer keep working unchanged. Lifecycle (open/resolved/suppressed) is NOT
+ * here: a Graph is a point-in-time snapshot; lifecycle lives in
+ * `FindingRecord` (lifecycle.ts) and the database.
  */
 export const FindingSchema = z.object({
   id: z.string().min(1),
   severity: SeveritySchema,
-  /** e.g. "plaintext-secret" | "external-can-assume" */
+  /** e.g. "plaintext-secret" | "external-can-assume" | "sg-open-ssh" */
   kind: z.string().min(1),
   /** The resource this finding is about, if applicable. */
   nodeId: z.string().optional(),
   title: z.string(),
   detail: z.string(),
+  /** Rule registry id, e.g. "ec2.sg-unrestricted-ssh". */
+  ruleId: z.string().optional(),
+  source: FindingSourceSchema.optional(),
+  controls: z.array(ControlRefSchema).optional(),
+  remediation: RemediationSchema.optional(),
+  /** Survives node deletion for resolved findings. */
+  resourceType: z.string().optional(),
+  /** Sanitized values the rule saw. Dropped by redactGraph. */
+  evidence: z.record(z.unknown()).optional(),
+  /** Security Hub finding ARN / Access Analyzer finding id. */
+  externalId: z.string().optional(),
+  observedAt: z.string().optional(),
 });
 
 export const GraphMetaSchema = z.object({

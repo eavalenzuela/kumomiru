@@ -254,7 +254,33 @@ works when the flag is on.
 
 ---
 
-### Phase 2 — Rule engine, frameworks, finding lifecycle, snapshot diff
+### Phase 2 — Rule engine, frameworks, finding lifecycle, snapshot diff (done, 2026-09-19)
+
+Landed as designed below. Deviations and specifics:
+
+- Security-group ingress rules are now stored on the SG node as
+  `attributes.ingress` (shared `IngressRule` shape, both adapters) so rules
+  can evaluate exposure; `redactGraph` keeps the rule shape but only the two
+  "anyone" CIDRs.
+- First rule tranche: EC2.13, EC2.14, EC2.15, EC2.18, EC2.19, RDS.2, plus
+  adoption of `plaintext-secret` and `external-can-assume`. Neither native
+  finding maps cleanly to an FSBP control, so they carry NIST CSF 2.0
+  references only. The FSBP catalogue also lists the next tranche's controls
+  so the compliance report shows them as not-assessed rather than absent.
+- Capabilities come from `DISCOVERY_CAPABILITIES` in adapters; a rule whose
+  requirement is missing yields `not-assessed` per resource.
+- Rule findings are written *into the stored snapshot graph* alongside adapter
+  findings, so the map shows them without any viewer change. Lifecycle lives
+  in the `findings` table; `reconcile` is one transaction per scan.
+- Suppressions match `ruleId` + resource pattern (exact, `*`, or glob) with
+  optional account scope and expiry; creating or revoking one re-applies to
+  open findings immediately through the API, not just at the next scan.
+- Rule and control metadata are mirrored into `rules` / `controls` tables at
+  worker start (`syncRuleMetadata`); the API reads the registry directly.
+- Not done here: `replaces` is enforced at registration but lifecycle rows are
+  not yet migrated on rename (no rule has been renamed). A viewer inspector
+  tab for controls and remediation is Phase 6.
+
 
 **Goal.** Every snapshot is evaluated by a typed rule registry. Findings have
 an open/resolved/suppressed lifecycle. Consecutive snapshots are diffed.

@@ -1,11 +1,13 @@
 import {
   CredentialBroker,
+  DISCOVERY_CAPABILITIES,
   discoverGraph,
   mergeGraphs,
   type AwsCredentials,
 } from "@kumomiru/adapters";
-import { checkReferentialIntegrity, type Graph } from "@kumomiru/graph";
+import { checkReferentialIntegrity, diffSnapshots, type Graph } from "@kumomiru/graph";
 import type { AccountRecord, Database, ScanRecord } from "@kumomiru/db";
+import { defaultRegistry, evaluate } from "@kumomiru/rules";
 
 import type { WorkerDeps } from "../deps.js";
 import type { Logger } from "../log.js";
@@ -89,7 +91,33 @@ export async function runScan(
       return;
     }
 
-    const snapshot = db.snapshots.insert({ scanId: scan.id, accountId: account.id, graph: merged });
+    // --- Rules, persistence, lifecycle, diff (Phase 2) -------------------
+    // Rules run over the merged snapshot; their findings join the adapter
+    // findings *in the stored graph* so the map shows them, and are then
+    // reconciled against lifecycle state (open / reopened / resolved /
+    // suppressed). The diff is against the previous stored snapshot.
+    const registry = deps.registry ?? defaultRegistry();
+    const evaluation = evaluate(merged, registry, {
+      capabilities: deps.capabilities ?? DISCOVERY_CAPABILITIES,
+    });
+    const graph: Graph = { ...merged, findings: evaluation.findings };
+    const prevMeta = db.snapshots.latestForAccount(account.id);
+    const prevGraph = prevMeta ? db.snapshots.getGraph(prevMeta.id) : null;
+
+    const snapshot = db.snapshots.insert({ scanId: scan.id, accountId: account.id, graph });
+    db.ruleResults.replaceForSnapshot(snapshot.id, evaluation.results);
+    const observedAt = graph.meta.generatedAt;
+    const lifecycle = db.findings.reconcile({
+      accountId: account.id,
+      snapshotId: snapshot.id,
+      observedAt,
+      findings: evaluation.findings,
+      suppressions: db.suppressions.activeFor(account.id, observedAt),
+    });
+    const stored = db.snapshots.getGraph(snapshot.id) ?? graph;
+    const diff = diffSnapshots(prevGraph, stored);
+    db.diffs.set(snapshot.id, diff);
+
     const partial = Object.keys(failed).length > 0;
     db.scans.finish(scan.id, {
       status: partial ? "partial" : "ok",
@@ -100,9 +128,17 @@ export async function runScan(
         snapshotId: snapshot.id,
         regions: covered,
         failedRegions: Object.keys(failed),
-        nodes: merged.nodes.length,
-        edges: merged.edges.length,
-        findings: merged.findings.length,
+        nodes: graph.nodes.length,
+        edges: graph.edges.length,
+        findings: graph.findings.length,
+        rulesNotAssessed: evaluation.notAssessedRules,
+        findingsOpened: lifecycle.opened.length,
+        findingsReopened: lifecycle.reopened.length,
+        findingsResolved: lifecycle.resolved.length,
+        findingsSuppressed: lifecycle.suppressed.length,
+        nodesAdded: diff.nodesAdded.length,
+        nodesRemoved: diff.nodesRemoved.length,
+        nodesChanged: diff.nodesChanged.length,
         durationMs: deps.now().getTime() - started.getTime(),
       },
     });
@@ -111,7 +147,9 @@ export async function runScan(
       scanId: scan.id,
       status: partial ? "partial" : "ok",
       snapshotId: snapshot.id,
-      nodes: merged.nodes.length,
+      nodes: graph.nodes.length,
+      findingsOpened: lifecycle.opened.length,
+      findingsResolved: lifecycle.resolved.length,
     });
   } catch (err) {
     const error = summarize(err);

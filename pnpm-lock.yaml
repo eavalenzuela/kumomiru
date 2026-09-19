@@ -93,6 +93,19 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/rules:
+    dependencies:
+      '@kumomiru/graph':
+        specifier: workspace:*
+        version: link:../graph
+    devDependencies:
+      tsx:
+        specifier: ^4.23.13
+        version: 4.23.13
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/server:
     dependencies:
       '@kumomiru/adapters':
@@ -107,6 +120,9 @@ importers:
       '@kumomiru/graph':
         specifier: workspace:*
         version: link:../graph
+      '@kumomiru/rules':
+        specifier: workspace:*
+        version: link:../rules
       croner:
         specifier: ^10.0.1
         version: 10.0.1
@@ -178,6 +194,9 @@ importers:
       '@kumomiru/graph':
         specifier: workspace:*
         version: link:../graph
+      '@kumomiru/rules':
+        specifier: workspace:*
+        version: link:../rules
       croner:
         specifier: ^10.0.1
         version: 10.0.1

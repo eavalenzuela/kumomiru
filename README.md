@@ -31,7 +31,8 @@ pnpm monorepo under `packages/`:
 | [`@kumomiru/graph`](packages/graph) | The normalized graph spine. Zod schema is the source of truth. |
 | [`@kumomiru/adapters`](packages/adapters) | Ingestion: Terraform state and live AWS discovery, plus the IAM and dataflow analysis passes. |
 | [`@kumomiru/aws`](packages/aws) | The only place the AWS SDK is used. The least-privilege policy is generated from the actions declared here. |
-| [`@kumomiru/db`](packages/db) | SQLite behind a repository interface: accounts, scans, snapshots. |
+| [`@kumomiru/rules`](packages/rules) | Typed posture rules over the graph, FSBP and NIST CSF 2.0 mappings, compliance roll-up. |
+| [`@kumomiru/db`](packages/db) | SQLite behind a repository interface: accounts, scans, snapshots, findings lifecycle. |
 | [`@kumomiru/worker`](packages/worker) | Scheduled scans. Assumes a read-only role in each account from the host's own identity. Never holds a key. |
 | [`@kumomiru/server`](packages/server) | Fastify API. Serves stored snapshots; ad-hoc ingest with pasted credentials is dev-only. |
 | [`@kumomiru/viewer`](packages/viewer) | React + Cytoscape.js map with ELK layered layout. |
@@ -75,7 +76,10 @@ curl -s -X POST localhost:4000/accounts/123456789012/scans -d '{"trigger":"verif
 ```
 
 Once verified the account is `active` and scans run on schedule. The latest
-map is at `GET /accounts/:id/latest` and in the viewer's Accounts tab.
+map is at `GET /accounts/:id/latest` and in the viewer's Accounts tab. Every
+scan also runs the posture rules: findings with lifecycle at `GET /findings`,
+the per-control roll-up at `GET /compliance?framework=fsbp`, and what changed
+at `GET /snapshots/:id/diff`.
 
 Both processes read the same SQLite file, `KUMOMIRU_DB_PATH` (default
 `./kumomiru.db`). Set `KUMOMIRU_ADHOC_INGEST=0` (or `NODE_ENV=production`) to
@@ -84,7 +88,7 @@ disable the pasted-credential and Terraform-upload routes.
 ## Develop
 
 ```sh
-pnpm test           # 100+ tests across graph, adapters, aws, db, worker, server
+pnpm test           # 130+ tests across graph, adapters, aws, rules, db, worker, server
 pnpm typecheck
 pnpm policy:gen     # regenerate docs/least-privilege-policy.json after changing the policy
 ```

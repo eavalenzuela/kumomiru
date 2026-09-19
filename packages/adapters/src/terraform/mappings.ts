@@ -1,4 +1,5 @@
 import { parseArn } from "./arn.js";
+import { ingressAttribute, type IngressRule } from "../common/ingress.js";
 
 /**
  * Per-Terraform-type mapping rules. Each entry knows how to turn a TF resource
@@ -122,9 +123,31 @@ export const NODE_MAPPINGS: Record<string, NodeMapping> = {
     name: (a) => str(a["name"]),
     parentIdAttr: "vpc_id",
     fallbackParent: "region",
-    attributes: () => ({}),
+    attributes: (a) => ({ ingress: terraformIngress(a["ingress"]) }),
   },
 };
+
+/**
+ * Terraform's `ingress` blocks → the shared IngressRule shape. `protocol` "-1"
+ * means all; from/to 0 with -1 is "all ports".
+ */
+function terraformIngress(raw: unknown): IngressRule[] {
+  if (!Array.isArray(raw)) return [];
+  return ingressAttribute(
+    (raw as Array<Record<string, unknown>>).map((r) => ({
+      ...(num(r["from_port"]) !== undefined ? { fromPort: num(r["from_port"]) } : {}),
+      ...(num(r["to_port"]) !== undefined ? { toPort: num(r["to_port"]) } : {}),
+      ...(str(r["protocol"]) ? { ipProtocol: str(r["protocol"]) } : {}),
+      cidrs: [
+        ...(Array.isArray(r["cidr_blocks"]) ? (r["cidr_blocks"] as unknown[]) : []),
+        ...(Array.isArray(r["ipv6_cidr_blocks"]) ? (r["ipv6_cidr_blocks"] as unknown[]) : []),
+      ].filter((c): c is string => typeof c === "string"),
+      sourceGroupIds: (Array.isArray(r["security_groups"]) ? (r["security_groups"] as unknown[]) : []).filter(
+        (g): g is string => typeof g === "string",
+      ),
+    })),
+  );
+}
 
 /** region/account derived from a resource's arn when not given on attributes. */
 export function regionAccountFromAttrs(attrs: Record<string, unknown>): {

@@ -17,6 +17,7 @@ import { REDACT_PATHS } from "./redact.js";
 import { registerLiveRoute, wantsRedacted } from "./routes/live.js";
 import { registerPolicyRoute } from "./routes/policy.js";
 import { registerAccountRoutes } from "./routes/accounts.js";
+import { registerFindingRoutes } from "./routes/findings.js";
 
 export interface BuildAppOptions {
   /** Pass false in tests to silence logging. */
@@ -114,8 +115,12 @@ export function buildApp(opts: BuildAppOptions = {}): FastifyInstance {
   // after the run). Ad-hoc only: scheduled scans never take pasted keys.
   if (adhoc) registerLiveRoute(app, opts.discoveryClientFactory);
 
-  // Accounts, scans, snapshots — the persisted, scheduled path.
-  if (opts.db) registerAccountRoutes(app, opts.db);
+  // Accounts, scans, snapshots — the persisted, scheduled path — and the
+  // posture layer over it: findings, suppressions, rules, compliance, diffs.
+  if (opts.db) {
+    registerAccountRoutes(app, opts.db);
+    registerFindingRoutes(app, opts.db);
+  }
 
   // GET /policy/least-privilege — the exact read-only policy a scan role needs.
   registerPolicyRoute(app);

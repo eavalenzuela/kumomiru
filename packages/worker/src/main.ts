@@ -2,7 +2,10 @@ import { hostname } from "node:os";
 import { openDatabase } from "@kumomiru/db";
 import { listEnabledRegions, makeSdkClient, sts } from "@kumomiru/aws";
 
+import { defaultRegistry } from "@kumomiru/rules";
+
 import { consoleLogger } from "./log.js";
+import { syncRuleMetadata } from "./metadata.js";
 import { Scheduler } from "./scheduler.js";
 
 /**
@@ -16,6 +19,8 @@ const pollMs = Number(env["KUMOMIRU_POLL_SECONDS"] ?? 30) * 1000;
 const stsRegion = env["KUMOMIRU_STS_REGION"] ?? "us-east-1";
 
 const db = openDatabase(dbPath);
+const registry = defaultRegistry();
+syncRuleMetadata(db, registry);
 const scheduler = new Scheduler(
   db,
   {
@@ -25,6 +30,7 @@ const scheduler = new Scheduler(
     now: () => new Date(),
     workerId,
     stsRegion,
+    registry,
   },
   { pollMs, log: consoleLogger },
 );

@@ -21,6 +21,9 @@ export type {
 } from "./aws-live/index.js";
 // Combine per-region + global graphs of one account (scheduled scans).
 export { mergeGraphs } from "./common/merge.js";
+// The rule engine's `requires` vocabulary: what discovery collects.
+export { DISCOVERY_CAPABILITIES } from "./aws-live/discover.js";
+export type { IngressRule } from "./common/ingress.js";
 // Discovery projection shapes — implemented by the server's SDK-backed client.
 export type {
   DiscoveredVpc,

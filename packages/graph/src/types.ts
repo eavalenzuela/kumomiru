@@ -7,6 +7,10 @@ import type {
   FindingSchema,
   GraphMetaSchema,
   GraphSchema,
+  FrameworkSchema,
+  ControlRefSchema,
+  RemediationSchema,
+  FindingSourceSchema,
 } from "./schema.js";
 
 /**
@@ -25,3 +29,7 @@ export type CloudEdge = z.infer<typeof CloudEdgeSchema>;
 export type Finding = z.infer<typeof FindingSchema>;
 export type GraphMeta = z.infer<typeof GraphMetaSchema>;
 export type Graph = z.infer<typeof GraphSchema>;
+export type Framework = z.infer<typeof FrameworkSchema>;
+export type ControlRef = z.infer<typeof ControlRefSchema>;
+export type Remediation = z.infer<typeof RemediationSchema>;
+export type FindingSource = z.infer<typeof FindingSourceSchema>;

@@ -29,6 +29,14 @@ logs.
 | GET | `/accounts/:id/scans`, `/accounts/:id/snapshots` | History. |
 | GET | `/scans/:id`, `/snapshots/:id`, `/snapshots/:id/graph` | Individual records; the graph route honors `?redacted=1`. |
 | GET | `/policy/least-privilege` | The generated read-only policy for the scan role. |
+| GET | `/findings` | Lifecycle findings. Filters: `accountId`, `status` (open/resolved/suppressed), `severity`, `ruleId`, `framework`+`control`, `limit`. Most severe first. |
+| GET | `/findings/summary?accountId=` | Open counts by severity. |
+| GET | `/findings/:id` | One finding with first/last seen, resolved/suppressed state. |
+| GET / POST | `/suppressions` | Active suppressions (`?all=1` for revoked/expired too). POST `{ ruleId, resourcePattern, accountId?, reason, expiresAt? }` — applies to open findings immediately. |
+| DELETE | `/suppressions/:id` | Revoke; matching findings reopen immediately. |
+| GET | `/rules`, `/controls?framework=` | The rule registry (severity, controls, remediation) and framework catalogues. |
+| GET | `/compliance?framework=fsbp\|nist-csf-2&accountId=` | Per-control pass/fail/not-assessed from each account's latest snapshot, overall and per account. |
+| GET | `/snapshots/:id/diff` | What changed versus the previous snapshot. |
 
 The account routes exist only when the server is started with a database
 (`KUMOMIRU_DB_PATH`, shared with the worker). Without one it is the stateless

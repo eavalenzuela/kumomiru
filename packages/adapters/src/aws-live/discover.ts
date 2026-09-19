@@ -6,6 +6,7 @@ import {
   type Graph,
 } from "@kumomiru/graph";
 import { Containers } from "../common/containers.js";
+import { ingressAttribute } from "../common/ingress.js";
 import {
   scanText,
   scanRecord,
@@ -25,6 +26,24 @@ import {
 import type { DiscoveryClient } from "./client.js";
 
 const SOURCE = "aws-live";
+
+/**
+ * What a full live discovery collects — the rule engine's `requires`
+ * vocabulary. A rule whose requirement is absent reports `not-assessed`
+ * instead of silently passing. Both adapters produce this set today.
+ */
+export const DISCOVERY_CAPABILITIES = [
+  "ec2:vpc",
+  "ec2:subnet",
+  "ec2:internet-gateway",
+  "ec2:security-group",
+  "ec2:instance",
+  "rds:db-instance",
+  "lambda:function",
+  "secretsmanager:secret",
+  "iam:role",
+  "iam:user",
+] as const;
 
 /**
  * ARN helpers for stable node ids, bound to the account's partition so ids
@@ -208,7 +227,9 @@ export async function discoverGraph(
       region,
       parent: sg.vpcId ? (vpcNode.get(sg.vpcId) ?? regionId) : regionId,
       tags: sg.tags,
-      attributes: {},
+      // The rule engine evaluates exposure from these; shape is shared with
+      // the Terraform adapter (see ingressAttribute in common/ingress.ts).
+      attributes: { ingress: ingressAttribute(sg.ingress) },
     });
     // Record whether this SG exposes anything to the internet, and capture
     // SG-to-SG rules for the dataflow pass (who may reach this group, on what).

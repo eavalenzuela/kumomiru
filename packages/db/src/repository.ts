@@ -1,4 +1,14 @@
-import type { Graph } from "@kumomiru/graph";
+import type {
+  ControlRef,
+  Finding,
+  FindingRecord,
+  Framework,
+  Graph,
+  Remediation,
+  RuleResult,
+  Severity,
+  SnapshotDiff,
+} from "@kumomiru/graph";
 
 /**
  * Record types and repository interfaces. Everything is synchronous because
@@ -128,11 +138,124 @@ export interface LeaseRepo {
   release(name: string, holder: string): void;
 }
 
+// --- lifecycle (Phase 2) ----------------------------------------------------
+
+export interface SuppressionRecord {
+  id: string;
+  ruleId: string;
+  /** Exact resource id, `*`, or a glob with `*` wildcards. */
+  resourcePattern: string;
+  accountId: string | null;
+  reason: string;
+  createdBy: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+}
+
+export interface NewSuppression {
+  ruleId: string;
+  resourcePattern: string;
+  accountId?: string | null;
+  reason: string;
+  createdBy?: string | null;
+  expiresAt?: string | null;
+}
+
+export interface ReconcileSummary {
+  opened: string[];
+  reopened: string[];
+  resolved: string[];
+  suppressed: string[];
+  unchanged: number;
+}
+
+export interface FindingFilter {
+  accountId?: string;
+  status?: FindingRecord["status"];
+  severity?: Severity;
+  ruleId?: string;
+  control?: ControlRef;
+  limit?: number;
+}
+
+export interface FindingRepo {
+  /**
+   * Bring stored lifecycle state in line with what a snapshot observed:
+   * unseen ids open (or start suppressed if a suppression matches), previously
+   * resolved ids reopen, seen ids refresh, and open/suppressed ids not observed
+   * resolve. Atomic.
+   */
+  reconcile(input: {
+    accountId: string;
+    snapshotId: string;
+    observedAt: string;
+    findings: readonly Finding[];
+    suppressions: readonly SuppressionRecord[];
+  }): ReconcileSummary;
+  list(filter?: FindingFilter): FindingRecord[];
+  get(id: string): FindingRecord | null;
+  /** Open findings by severity for one account, or all accounts. */
+  openCounts(accountId?: string): Record<Severity, number>;
+  /** Re-evaluate suppression on open/suppressed findings after a change. */
+  applySuppressions(suppressions: readonly SuppressionRecord[], now: string): void;
+}
+
+export interface RuleResultRepo {
+  replaceForSnapshot(snapshotId: string, results: readonly RuleResult[]): void;
+  forSnapshot(snapshotId: string): RuleResult[];
+}
+
+export interface DiffRepo {
+  set(snapshotId: string, diff: SnapshotDiff): void;
+  get(snapshotId: string): SnapshotDiff | null;
+}
+
+export interface SuppressionRepo {
+  list(opts?: { includeInactive?: boolean }): SuppressionRecord[];
+  get(id: string): SuppressionRecord | null;
+  create(input: NewSuppression): SuppressionRecord;
+  revoke(id: string): boolean;
+  /** Suppressions in force for an account at `now` (global ones included). */
+  activeFor(accountId: string, now: string): SuppressionRecord[];
+}
+
+export interface RuleMeta {
+  id: string;
+  version: number;
+  title: string;
+  severity: Severity;
+  kind: string;
+  resourceTypes: string[];
+  requires: string[];
+  controls: ControlRef[];
+  remediation: Remediation;
+}
+
+export interface ControlRecord {
+  framework: Framework;
+  id: string;
+  title: string;
+  version: string;
+}
+
+export interface MetadataRepo {
+  syncRules(rules: readonly RuleMeta[]): void;
+  listRules(): RuleMeta[];
+  syncControls(framework: Framework, version: string, controls: readonly { id: string; title: string }[]): void;
+  listControls(framework?: Framework): ControlRecord[];
+}
+
 export interface Database {
   accounts: AccountRepo;
   scans: ScanRepo;
   snapshots: SnapshotRepo;
   settings: SettingsRepo;
   leases: LeaseRepo;
+  findings: FindingRepo;
+  ruleResults: RuleResultRepo;
+  diffs: DiffRepo;
+  suppressions: SuppressionRepo;
+  metadata: MetadataRepo;
   close(): void;
 }

@@ -54,10 +54,31 @@ function isSecretMarker(value: unknown): boolean {
   );
 }
 
+const PUBLIC_CIDRS = new Set(["0.0.0.0/0", "::/0"]);
+
+/**
+ * Security-group ingress rules are structural (ports, protocol, which SGs) but
+ * their CIDRs may name a customer network. Keep the rule shape; keep only the
+ * two "anyone" CIDRs, which is what the exposure rules need.
+ */
+function redactIngress(rules: unknown): unknown {
+  if (!Array.isArray(rules)) return undefined;
+  return rules.map((r) => {
+    const rule = (r ?? {}) as Record<string, unknown>;
+    const cidrs = Array.isArray(rule["cidrs"]) ? (rule["cidrs"] as unknown[]) : [];
+    return {
+      ...rule,
+      cidrs: cidrs.filter((c) => typeof c === "string" && PUBLIC_CIDRS.has(c)),
+    };
+  });
+}
+
 function redactNode(node: CloudNode): CloudNode {
   const attributes: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(node.attributes)) {
-    if (isSecretMarker(value)) {
+    if (key === "ingress") {
+      attributes[key] = redactIngress(value);
+    } else if (isSecretMarker(value)) {
       attributes[key] = value; // holds no value to begin with
     } else if (typeof value === "number" || typeof value === "boolean") {
       attributes[key] = value; // structural fact
@@ -83,7 +104,9 @@ export function redactGraph(graph: Graph): Graph {
     nodes: graph.nodes.map(redactNode),
     // Edges carry relationships/ports, not data values — kept as-is.
     edges: graph.edges.map((e) => ({ ...e })),
-    findings: graph.findings.map((f) => ({ ...f })),
+    // Findings keep their identity/severity/guidance; `evidence` holds values
+    // a rule saw (CIDRs, names) and is dropped.
+    findings: graph.findings.map(({ evidence: _evidence, ...f }) => ({ ...f })),
     meta: { ...graph.meta },
   };
 }

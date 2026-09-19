@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { openDatabase } from "@kumomiru/db";
 import type { AwsCredentials } from "@kumomiru/adapters";
-import { Scheduler, runScan, silentLogger, type WorkerDeps } from "../src/index.js";
+import { Scheduler, runScan, silentLogger, syncRuleMetadata, type WorkerDeps } from "../src/index.js";
 import { fakeClientFactory } from "./fake-client.js";
 
 const ACCOUNT = {
@@ -66,6 +66,96 @@ test("runScan: assumes the role once, scans every region, persists a merged snap
   assert.equal(graph.nodes.filter((n) => n.type === "aws::ec2::instance").length, 2);
   assert.equal(graph.nodes.filter((n) => n.type === "aws::iam::role").length, 1);
   assert.ok(graph.findings.some((f) => f.kind === "external-can-assume"));
+  db.close();
+});
+
+test("runScan: rules run on the snapshot; lifecycle opens, holds, and resolves across scans", async () => {
+  const db = openDatabase(":memory:");
+  db.accounts.upsert({ ...ACCOUNT, status: "active", regions: ["us-east-1"] });
+
+  // Scan 1: the fake SG allows 22 from 0.0.0.0/0 → sg-open-ssh + high-risk + unauthorized-port findings.
+  const { deps } = fakeDeps();
+  db.scans.enqueue(ACCOUNT.id, "manual");
+  let scan = db.scans.claimNext("w-test")!;
+  await runScan(scan, db.accounts.get(ACCOUNT.id)!, db, deps, silentLogger);
+  let done = db.scans.get(scan.id)!;
+  assert.equal(done.status, "ok", done.error ?? "");
+  const snap1 = db.snapshots.latestForAccount(ACCOUNT.id)!;
+  const g1 = db.snapshots.getGraph(snap1.id)!;
+  const ssh = g1.findings.find((f) => f.ruleId === "ec2.sg-unrestricted-ssh");
+  assert.ok(ssh, "rule finding is stored in the snapshot graph");
+  assert.equal(ssh!.nodeId, "arn:aws:ec2:us-east-1:123456789012:security-group/sg-us-east-1");
+  const ext = g1.findings.find((f) => f.kind === "external-can-assume");
+  assert.equal(ext!.ruleId, "kumomiru.external-can-assume", "adapter finding adopted");
+  assert.ok(db.ruleResults.forSnapshot(snap1.id).some((r) => r.ruleId === "ec2.sg-unrestricted-ssh" && r.status === "fail"));
+  assert.equal(done.stats?.["findingsOpened"], g1.findings.length);
+  assert.equal(db.findings.get(ssh!.id)!.status, "open");
+  const diff1 = db.diffs.get(snap1.id)!;
+  assert.equal(diff1.prevSnapshotId, null);
+  assert.equal(diff1.nodesAdded.length, g1.nodes.length);
+
+  // Scan 2: same environment, one hour later → nothing new, nothing resolved.
+  deps.now = () => new Date("2026-09-19T13:00:00Z");
+  db.scans.enqueue(ACCOUNT.id, "manual");
+  scan = db.scans.claimNext("w-test")!;
+  await runScan(scan, db.accounts.get(ACCOUNT.id)!, db, deps, silentLogger);
+  done = db.scans.get(scan.id)!;
+  assert.equal(done.stats?.["findingsOpened"], 0);
+  assert.equal(done.stats?.["findingsResolved"], 0);
+  assert.equal(done.stats?.["nodesChanged"], 0);
+  const f2 = db.findings.get(ssh!.id)!;
+  assert.equal(f2.firstSeenAt, "2026-09-19T12:00:00.000Z");
+  assert.equal(f2.lastSeenAt, "2026-09-19T13:00:00.000Z");
+
+  // Scan 3: the SG is fixed (no public rule) → the SSH finding resolves.
+  const fixed = fakeClientFactory();
+  deps.makeClient = (creds) => {
+    const c = fixed.factory(creds);
+    return {
+      ...c,
+      securityGroups: async () => [
+        { groupId: `sg-${creds.region}`, vpcId: `vpc-${creds.region}`, ingress: [], tags: {} },
+      ],
+    };
+  };
+  deps.now = () => new Date("2026-09-19T14:00:00Z");
+  db.scans.enqueue(ACCOUNT.id, "manual");
+  scan = db.scans.claimNext("w-test")!;
+  await runScan(scan, db.accounts.get(ACCOUNT.id)!, db, deps, silentLogger);
+  done = db.scans.get(scan.id)!;
+  assert.ok((done.stats?.["findingsResolved"] as number) >= 1);
+  const f3 = db.findings.get(ssh!.id)!;
+  assert.equal(f3.status, "resolved");
+  assert.equal(f3.resolvedAt, "2026-09-19T14:00:00.000Z");
+  const snap3 = db.snapshots.latestForAccount(ACCOUNT.id)!;
+  const diff3 = db.diffs.get(snap3.id)!;
+  assert.equal(diff3.prevSnapshotId, db.snapshots.listForAccount(ACCOUNT.id)[1]!.id);
+  assert.ok(diff3.findingsResolved.some((f) => f.id === ssh!.id));
+  assert.ok(diff3.nodesChanged.some((n) => n.changedKeys.includes("attributes.ingress")));
+  db.close();
+});
+
+test("runScan: a suppression in force makes a new finding start suppressed", async () => {
+  const db = openDatabase(":memory:");
+  db.accounts.upsert({ ...ACCOUNT, status: "active", regions: ["us-east-1"] });
+  db.suppressions.create({ ruleId: "ec2.sg-unrestricted-ssh", resourcePattern: "*", reason: "known bastion" });
+  const { deps } = fakeDeps();
+  db.scans.enqueue(ACCOUNT.id, "manual");
+  const scan = db.scans.claimNext("w-test")!;
+  await runScan(scan, db.accounts.get(ACCOUNT.id)!, db, deps, silentLogger);
+  const ssh = db.findings.list({ ruleId: "ec2.sg-unrestricted-ssh" })[0]!;
+  assert.equal(ssh.status, "suppressed");
+  assert.equal(db.scans.get(scan.id)!.stats?.["findingsSuppressed"], 1);
+  db.close();
+});
+
+test("syncRuleMetadata mirrors rules and controls into the database", async () => {
+  const db = openDatabase(":memory:");
+  const { defaultRegistry } = await import("@kumomiru/rules");
+  syncRuleMetadata(db, defaultRegistry());
+  assert.ok(db.metadata.listRules().some((r) => r.id === "ec2.sg-unrestricted-ssh"));
+  assert.ok(db.metadata.listControls("fsbp").some((c) => c.id === "EC2.13"));
+  assert.ok(db.metadata.listControls("nist-csf-2").some((c) => c.id === "PR.IR-01"));
   db.close();
 });
 
