@@ -137,8 +137,8 @@ test("controlStatuses: rolls results up per control for both frameworks", () => 
   assert.equal(byId.get("RDS.2")!.status, "fail");
   assert.equal(byId.get("S3.1")!.status, "not-assessed", "mapped but its collector was absent → gap is visible");
   assert.deepEqual(byId.get("S3.1")!.ruleIds, ["s3.account-public-access-block"]);
-  assert.equal(byId.get("ELB.1")!.status, "not-assessed", "unmapped control is visible as a gap");
-  assert.deepEqual(byId.get("ELB.1")!.ruleIds, []);
+  assert.equal(byId.get("IAM.6")!.status, "not-assessed", "unmapped control is visible as a gap");
+  assert.deepEqual(byId.get("IAM.6")!.ruleIds, []);
 
   const nist = controlStatuses("nist-csf-2", ev.results, reg);
   const ir = nist.find((c) => c.controlId === "PR.IR-01")!;

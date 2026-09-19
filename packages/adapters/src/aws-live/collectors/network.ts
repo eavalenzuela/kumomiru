@@ -47,6 +47,7 @@ export async function collectNetwork(ctx: CollectContext): Promise<InternetIngre
 
   for (const igw of await client.internetGateways()) {
     const id = arn.igw(account, region, igw.internetGatewayId);
+    ctx.index.igw.set(igw.internetGatewayId, id);
     const parent = igw.attachedVpcId ? (ctx.index.vpc.get(igw.attachedVpcId) ?? regionId) : regionId;
     nodes.push({
       id,
@@ -97,5 +98,6 @@ export async function collectNetwork(ctx: CollectContext): Promise<InternetIngre
       }
     }
   }
+  ctx.index.internet = internet;
   return internet;
 }

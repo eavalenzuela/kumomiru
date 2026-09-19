@@ -31,6 +31,11 @@ export interface CollectContext {
     instance: Map<string, string>;
     kmsKey: Map<string, string>;
     bucket: Map<string, string>;
+    /** IGW raw id → node id, NAT raw id → node id (for route targets). */
+    igw: Map<string, string>;
+    nat: Map<string, string>;
+    /** Internet-facing SG ingress, from the network collector. */
+    internet: Map<string, { ports: string; cidr: string }>;
   };
   /** Inputs for the dataflow pass. */
   df: {
@@ -53,6 +58,12 @@ export interface ArnHelpers {
   snapshot(acct: string, region: string, id: string): string;
   db(acct: string, region: string, id: string): string;
   fn(acct: string, region: string, id: string): string;
+  routeTable(acct: string, region: string, id: string): string;
+  nat(acct: string, region: string, id: string): string;
+  peering(acct: string, region: string, id: string): string;
+  endpoint(acct: string, region: string, id: string): string;
+  nacl(acct: string, region: string, id: string): string;
+  launchTemplate(acct: string, region: string, id: string): string;
 }
 
 /**
@@ -71,6 +82,12 @@ export function arnHelpers(partition: string): ArnHelpers {
     snapshot: (acct, region, id) => `arn:${p}:ec2:${region}:${acct}:snapshot/${id}`,
     db: (acct, region, id) => `arn:${p}:rds:${region}:${acct}:db:${id}`,
     fn: (acct, region, id) => `arn:${p}:lambda:${region}:${acct}:function:${id}`,
+    routeTable: (acct, region, id) => `arn:${p}:ec2:${region}:${acct}:route-table/${id}`,
+    nat: (acct, region, id) => `arn:${p}:ec2:${region}:${acct}:natgateway/${id}`,
+    peering: (acct, region, id) => `arn:${p}:ec2:${region}:${acct}:vpc-peering-connection/${id}`,
+    endpoint: (acct, region, id) => `arn:${p}:ec2:${region}:${acct}:vpc-endpoint/${id}`,
+    nacl: (acct, region, id) => `arn:${p}:ec2:${region}:${acct}:network-acl/${id}`,
+    launchTemplate: (acct, region, id) => `arn:${p}:ec2:${region}:${acct}:launch-template/${id}`,
   };
 }
 

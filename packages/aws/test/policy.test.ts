@@ -33,7 +33,8 @@ test("the scan policy never grants a data-plane read", () => {
   // credential-metadata CSV (no resource changes, no secrets) and is the only
   // way to obtain it.
   const READ_SHAPE = /^[a-z0-9-]+:(Describe|List|Get)[A-Za-z]+$/;
-  const EXCEPTIONS = new Set(["iam:GenerateCredentialReport"]);
+  // apigateway:GET is how API Gateway names every read.
+  const EXCEPTIONS = new Set(["iam:GenerateCredentialReport", "apigateway:GET"]);
   for (const a of policyActions()) {
     assert.ok(READ_SHAPE.test(a) || EXCEPTIONS.has(a), a);
   }

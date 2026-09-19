@@ -13,6 +13,7 @@ export async function collectCompute(ctx: CollectContext, internet: InternetIngr
       ...(inst.instanceType ? { instanceType: inst.instanceType } : {}),
       ...(inst.publicIp ? { publicIp: inst.publicIp } : {}),
       ...(inst.privateIp ? { privateIp: inst.privateIp } : {}),
+      ...(inst.imdsv2Required !== undefined ? { imdsv2Required: inst.imdsv2Required } : {}),
     };
     if (inst.userData) {
       const res = scanText(inst.userData);

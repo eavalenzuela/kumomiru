@@ -50,6 +50,16 @@ import {
   secretPolicyCollector,
   PHASE3_CAPABILITIES,
 } from "./collectors.js";
+import {
+  containerCollector,
+  dataCollector,
+  edgeCollector,
+  elbCollector,
+  messagingCollector,
+  rdsExtraCollector,
+  routingCollector,
+  scalingCollector,
+} from "./collectors-b.js";
 
 /**
  * The real, SDK-backed read-only DiscoveryClient. Every command here is
@@ -152,6 +162,14 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
   const iamAccount = iamAccountCollector(cfg, () => identity().then((i) => i.account));
   const lambdaPolicy = lambdaPolicyCollector(cfg);
   const secretPolicy = secretPolicyCollector(cfg);
+  const routing = routingCollector(cfg);
+  const elbv2 = elbCollector(cfg);
+  const containersB = containerCollector(cfg);
+  const messaging = messagingCollector(cfg);
+  const data = dataCollector(cfg);
+  const scaling = scalingCollector(cfg);
+  const edge = edgeCollector(cfg);
+  const rdsExtra = rdsExtraCollector(cfg);
 
   /**
    * GetAccountAuthorizationDetails is the IAM collection backbone (DESIGN.md
@@ -293,6 +311,7 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
             securityGroupIds: (i.SecurityGroups ?? [])
               .map((g) => g.GroupId ?? "")
               .filter(Boolean),
+            ...(i.MetadataOptions?.HttpTokens ? { imdsv2Required: i.MetadataOptions.HttpTokens === "required" } : {}),
             tags: tagsToRecord(i.Tags),
           });
         }
@@ -446,6 +465,29 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
     ebsVolumes: () => ebs.ebsVolumes(),
     ebsSnapshots: () => ebs.ebsSnapshots(),
     kmsKeys: () => kms.kmsKeys(),
+
+    // --- Tranche B ------------------------------------------------------------
+    routeTables: () => routing.routeTables(),
+    natGateways: () => routing.natGateways(),
+    vpcPeerings: () => routing.vpcPeerings(),
+    vpcEndpoints: () => routing.vpcEndpoints(),
+    networkAcls: () => routing.networkAcls(),
+    launchTemplates: () => routing.launchTemplates(),
+    loadBalancers: () => elbv2.loadBalancers(),
+    ecsClusters: () => containersB.ecsClusters(),
+    ecsTaskDefinitions: () => containersB.ecsTaskDefinitions(),
+    eksClusters: () => containersB.eksClusters(),
+    sqsQueues: () => messaging.sqsQueues(),
+    snsTopics: () => messaging.snsTopics(),
+    dynamoTables: () => data.dynamoTables(),
+    ecrRepositories: () => data.ecrRepositories(),
+    fileSystems: () => data.fileSystems(),
+    ssmParameters: () => data.ssmParameters(),
+    autoScalingGroups: () => scaling.autoScalingGroups(),
+    cloudFrontDistributions: () => edge.cloudFrontDistributions(),
+    restApis: () => edge.restApis(),
+    dbClusters: () => rdsExtra.dbClusters(),
+    dbSnapshots: () => rdsExtra.dbSnapshots(),
   };
 }
 

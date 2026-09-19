@@ -13,7 +13,9 @@ import {
   type DataflowIngress,
 } from "../analysis/dataflow.js";
 import type { IamAnalysisResult } from "../analysis/iam.js";
-import { buildTerraformIam, type TfIamNode } from "./iam.js";
+import { analyzeResourceAccess, type AccessResource } from "../analysis/resourceAccess.js";
+import { projectPolicyDocument } from "../common/policy-doc.js";
+import { buildTerraformPrincipals, buildTerraformIam, type TfIamNode } from "./iam.js";
 import { TfStateSchema, type TfState } from "./state-schema.js";
 import { NODE_MAPPINGS, regionAccountFromAttrs } from "./mappings.js";
 
@@ -39,6 +41,13 @@ interface Built {
  * Produces containment + a first network-edge pass (IGW attachment, security
  * group membership, internet-facing ingress).
  */
+/** What a Terraform state carries for the rule engine's `requires`. */
+const TERRAFORM_CAPABILITIES = [
+  "ec2:vpc", "ec2:subnet", "ec2:internet-gateway", "ec2:security-group", "ec2:instance",
+  "rds:db-instance", "lambda:function", "secretsmanager:secret", "iam:role", "iam:user",
+  "s3:bucket", "kms:key", "ec2:volume", "cloudtrail:trail",
+];
+
 export const terraformAdapter: Adapter<unknown> = {
   source: SOURCE,
   toGraph(input: unknown): Graph {
@@ -128,31 +137,76 @@ export const terraformAdapter: Adapter<unknown> = {
     // can-assume edges and external-can-assume findings.
     const iamNodes = collectIamNodes(built);
     let iam: IamAnalysisResult = { nodes: [], edges: [], findings: [] };
+    const selfAccount = iamNodes[0]?.account ?? built[0]?.node.account ?? "000000000000";
+    const accountNode = containers.account(selfAccount);
+    const principals = iamNodes.length > 0 ? buildTerraformPrincipals(state, iamNodes) : [];
     if (iamNodes.length > 0) {
-      const selfAccount = iamNodes[0]!.account;
-      const accountNode = containers.account(selfAccount);
       iam = buildTerraformIam(state, iamNodes, selfAccount, accountNode);
       edges.push(...iam.edges);
       findings.push(...iam.findings);
     }
 
+    // -- pass 7: resource policies (S3 bucket policies) → resource-access pass
+    // aws_s3_bucket_policy is a separate resource from aws_s3_bucket; join on
+    // the bucket name and store the projected statements on the bucket node
+    // (the same shape the live adapter uses), then run the shared pass.
+    const resources = collectResourcePolicies(state, built);
+    const access = resources.length
+      ? analyzeResourceAccess(principals, resources, selfAccount, accountNode)
+      : { nodes: [], edges: [], findings: [] };
+    edges.push(...access.edges);
+    findings.push(...access.findings);
+    const extraNodeIds = new Set(iam.nodes.map((n) => n.id));
+
     const nodes = [
       ...containers.nodes.values(),
       ...built.map((b) => b.node),
       ...iam.nodes,
+      ...access.nodes.filter((n) => !extraNodeIds.has(n.id)),
     ];
     return {
       nodes,
       edges,
       findings,
       meta: {
-        generatedAt: new Date(0).toISOString(),
+        generatedAt: new Date().toISOString(),
         source: SOURCE,
         provider: "aws",
+        capabilities: TERRAFORM_CAPABILITIES,
       },
     };
   },
 };
+
+/** Bucket policies joined to their bucket nodes, as inputs for the access pass. */
+function collectResourcePolicies(state: TfState, built: Built[]): AccessResource[] {
+  const bucketByName = new Map<string, Built>();
+  for (const b of built) {
+    if (b.node.type === "aws::s3::bucket") {
+      bucketByName.set(b.node.name, b);
+      if (b.rawId) bucketByName.set(b.rawId, b);
+    }
+  }
+  const out: AccessResource[] = [];
+  for (const resource of state.resources) {
+    if (resource.mode !== "managed" || resource.type !== "aws_s3_bucket_policy") continue;
+    for (const inst of resource.instances) {
+      const bucket = bucketByName.get(str(inst.attributes["bucket"]));
+      if (!bucket) continue;
+      const statements = projectPolicyDocument(inst.attributes["policy"]);
+      bucket.node.attributes["policyStatements"] = statements;
+      out.push({
+        id: bucket.node.id,
+        type: "aws::s3::bucket",
+        account: bucket.node.account,
+        statements,
+        actions: ["s3:GetObject", "s3:ListBucket", "s3:PutObject", "s3:*"],
+        resourceAliases: [`${bucket.node.id}/*`],
+      });
+    }
+  }
+  return out;
+}
 
 /** Project the built role/user nodes for the shared IAM analysis pass. */
 function collectIamNodes(built: Built[]): TfIamNode[] {

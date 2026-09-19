@@ -338,10 +338,10 @@ graphs in `packages/rules/test/fixtures`.
 
 ---
 
-### Phase 3 — Resource coverage and resource-policy IAM (tranche A done, 2026-09-19)
+### Phase 3 — Resource coverage and resource-policy IAM (done, 2026-09-19)
 
-Landed: the collector split, the resource-policy pass, and tranche A. Tranche
-B is open. Specifics:
+Landed in two commits: tranche A (collector split, resource-policy pass, the
+account/storage/audit services) and tranche B (the rest). Specifics:
 
 - `discover.ts` is now an orchestrator over `aws-live/collectors/{network,
   compute, database, serverless, storage, security, iam}.ts` sharing a
@@ -378,11 +378,33 @@ B is open. Specifics:
 - Terraform parity: `aws_s3_bucket`, `aws_kms_key`, `aws_ebs_volume`,
   `aws_cloudtrail` mapped. Bucket policies from `aws_s3_bucket_policy` are
   not yet linked to their bucket (needs a cross-resource pass).
-- **Not done (tranche B / later):** route tables, NAT, peering, NACLs, VPC
-  endpoints, EIPs; RDS clusters and snapshots; SSM parameter metadata;
-  ELBv2, EKS, ECS, SQS, SNS, DynamoDB via live, ECR, ASG/launch templates,
-  EFS, CloudFront, API Gateway. The FSBP catalogue lists IAM.6, ELB.1,
-  ECS.8, SQS.1, SNS.1 as visible gaps.
+- **Tranche B** adds 21 node types: route tables (subnets get
+  `public: true` when their table sends 0.0.0.0/0 to an IGW, main-table
+  inheritance included), NAT gateways, VPC peering (cross-account flagged),
+  VPC endpoints, NACLs, ELBv2 (internet-facing LBs get the same red
+  `allows-ingress` edge instances do, plus `targets` dataflow edges), ECS
+  clusters/services/task definitions (env vars sanitized), EKS, SQS, SNS,
+  DynamoDB (live), ECR, Auto Scaling groups and launch templates (user-data
+  sanitized), EFS, CloudFront (global pass; origin edges when the bucket is
+  in the graph), API Gateway REST APIs, RDS clusters and snapshots, SSM
+  parameters (metadata only; SecureString listed as a secret-shaped node).
+  SQS, SNS, ECR, and EFS policies feed the resource-access pass.
+  Instances carry `imdsv2Required`.
+- 21 tranche-B rules (EC2.2/8/21, AutoScaling.3, ELB.1/5, ECS.2, EKS.1/8,
+  SQS.1, SNS.1, DynamoDB.2, ECR.1/2/3, EFS.1, CloudFront.3/5, APIGateway.1,
+  RDS.1/27). **51 rules total**, mapping 50 FSBP controls. Remaining
+  visible gaps: IAM.6 (hardware MFA, not distinguishable from the API) and
+  ECS.8 (covered in substance by the plaintext-secret scan on task
+  definitions, but not mapped to avoid claiming it for EC2 user-data).
+- 45 more actions in the policy; `apigateway:GET` joins
+  `iam:GenerateCredentialReport` as a documented exception to the
+  Describe/List/Get shape (it is how API Gateway names every read).
+- Terraform: `aws_s3_bucket_policy` is joined to its bucket and the
+  resource-access pass runs on Terraform graphs; Terraform meta now carries
+  `capabilities` and a real `generatedAt`.
+- **Still not collected:** EIPs, security-group egress rules (EC2.2 checks
+  ingress only, stated in the rule), RDS parameter groups, Lambda layers,
+  WAF, Route 53, ACM. None blocks a current rule.
 
 
 **Goal.** Collect what FSBP controls actually need. Feed resource-based

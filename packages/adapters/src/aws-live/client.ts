@@ -62,6 +62,8 @@ export interface DiscoveredInstance {
   securityGroupIds: string[];
   /** Decoded EC2 user-data, if any. Scanned for secrets, never stored raw. */
   userData?: string;
+  /** MetadataOptions.HttpTokens === "required" (IMDSv2 enforced). */
+  imdsv2Required?: boolean;
   tags: Record<string, string>;
 }
 
@@ -196,6 +198,230 @@ export interface AccountSummary {
   } | null;
 }
 
+// --- Tranche B resources (all optional on the client) ---------------------------
+
+export interface DiscoveredRouteTable {
+  routeTableId: string;
+  vpcId: string;
+  /** Subnets explicitly associated; the main table covers the rest. */
+  subnetIds: string[];
+  main: boolean;
+  routes: Array<{
+    destination: string;
+    targetType: "igw" | "nat" | "peering" | "vpce" | "local" | "instance" | "other";
+    targetId?: string;
+  }>;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredNatGateway {
+  natGatewayId: string;
+  vpcId?: string;
+  subnetId?: string;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredVpcPeering {
+  peeringId: string;
+  requesterVpcId?: string;
+  requesterAccount?: string;
+  accepterVpcId?: string;
+  accepterAccount?: string;
+  status?: string;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredVpcEndpoint {
+  endpointId: string;
+  vpcId?: string;
+  serviceName: string;
+  type: string;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredNetworkAcl {
+  aclId: string;
+  vpcId?: string;
+  subnetIds: string[];
+  isDefault: boolean;
+  entries: Array<{
+    ruleNumber: number;
+    egress: boolean;
+    /** "-1" for all, or a protocol number/name. */
+    protocol: string;
+    fromPort?: number;
+    toPort?: number;
+    cidr?: string;
+    action: "allow" | "deny";
+  }>;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredLoadBalancer {
+  arn: string;
+  name: string;
+  type: "application" | "network" | "gateway";
+  scheme: "internet-facing" | "internal";
+  vpcId?: string;
+  subnetIds: string[];
+  securityGroupIds: string[];
+  dnsName?: string;
+  accessLogsEnabled?: boolean;
+  listeners: Array<{ port: number; protocol: string; redirectsToHttps: boolean }>;
+  /** Targets by instance id, IP, or Lambda ARN. */
+  targets: Array<{ targetGroupArn: string; targetType: string; id: string; port?: number }>;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredEcsCluster {
+  arn: string;
+  name: string;
+  services: Array<{
+    arn: string;
+    name: string;
+    taskDefinitionArn?: string;
+    launchType?: string;
+    assignPublicIp: boolean;
+    subnetIds: string[];
+    securityGroupIds: string[];
+  }>;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredTaskDefinition {
+  arn: string;
+  family: string;
+  /** Container env vars, scanned for secrets, never stored raw. */
+  containers: Array<{ name: string; image?: string; environment: Record<string, string> }>;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredEksCluster {
+  arn: string;
+  name: string;
+  version?: string;
+  vpcId?: string;
+  subnetIds: string[];
+  securityGroupIds: string[];
+  endpointPublicAccess: boolean;
+  endpointPrivateAccess: boolean;
+  publicAccessCidrs: string[];
+  /** Any control-plane log type enabled. */
+  loggingEnabled: boolean;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredQueue {
+  arn: string;
+  name: string;
+  kmsEncrypted: boolean;
+  policyStatements?: PolicyStatement[];
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredTopic {
+  arn: string;
+  name: string;
+  kmsEncrypted: boolean;
+  policyStatements?: PolicyStatement[];
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredDynamoTable {
+  arn: string;
+  name: string;
+  pitrEnabled?: boolean;
+  deletionProtection?: boolean;
+  kmsKeyArn?: string;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredEcrRepository {
+  arn: string;
+  name: string;
+  scanOnPush: boolean;
+  tagImmutability: boolean;
+  lifecyclePolicy: boolean;
+  policyStatements?: PolicyStatement[];
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredAutoScalingGroup {
+  arn: string;
+  name: string;
+  launchTemplateId?: string;
+  launchConfigurationName?: string;
+  instanceIds: string[];
+  subnetIds: string[];
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredLaunchTemplate {
+  launchTemplateId: string;
+  name: string;
+  /** Decoded user-data of the default/latest version; scanned, never stored raw. */
+  userData?: string;
+  imdsv2Required?: boolean;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredFileSystem {
+  arn: string;
+  fileSystemId: string;
+  name?: string;
+  encrypted: boolean;
+  kmsKeyId?: string;
+  policyStatements?: PolicyStatement[];
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredDistribution {
+  arn: string;
+  id: string;
+  domainName: string;
+  enabled: boolean;
+  /** Default cache behavior: "allow-all" | "redirect-to-https" | "https-only". */
+  viewerProtocolPolicy: string;
+  loggingEnabled: boolean;
+  origins: Array<{ id: string; domainName: string; type: "s3" | "custom" }>;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredRestApi {
+  id: string;
+  arn: string;
+  name: string;
+  stages: Array<{ name: string; loggingEnabled: boolean; tracingEnabled: boolean }>;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredDbCluster {
+  arn: string;
+  identifier: string;
+  engine?: string;
+  storageEncrypted?: boolean;
+  memberInstanceIdentifiers: string[];
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredDbSnapshot {
+  arn: string;
+  identifier: string;
+  /** Instance or cluster snapshot. */
+  kind: "instance" | "cluster";
+  encrypted: boolean;
+  /** restore attribute includes "all". */
+  public: boolean;
+  tags: Record<string, string>;
+}
+
+export interface DiscoveredSsmParameter {
+  arn: string;
+  name: string;
+  /** "String" | "StringList" | "SecureString" — values are NEVER read. */
+  type: string;
+}
+
 export interface RegionSettings {
   ebsEncryptionByDefault?: boolean;
   configRecorderEnabled?: boolean;
@@ -286,6 +512,30 @@ export interface DiscoveryClient {
   ebsSnapshots?(): Promise<DiscoveredSnapshot[]>;
   /** Regional. */
   kmsKeys?(): Promise<DiscoveredKmsKey[]>;
+
+  // --- Tranche B (all regional unless noted) ----------------------------------
+  routeTables?(): Promise<DiscoveredRouteTable[]>;
+  natGateways?(): Promise<DiscoveredNatGateway[]>;
+  vpcPeerings?(): Promise<DiscoveredVpcPeering[]>;
+  vpcEndpoints?(): Promise<DiscoveredVpcEndpoint[]>;
+  networkAcls?(): Promise<DiscoveredNetworkAcl[]>;
+  loadBalancers?(): Promise<DiscoveredLoadBalancer[]>;
+  ecsClusters?(): Promise<DiscoveredEcsCluster[]>;
+  ecsTaskDefinitions?(): Promise<DiscoveredTaskDefinition[]>;
+  eksClusters?(): Promise<DiscoveredEksCluster[]>;
+  sqsQueues?(): Promise<DiscoveredQueue[]>;
+  snsTopics?(): Promise<DiscoveredTopic[]>;
+  dynamoTables?(): Promise<DiscoveredDynamoTable[]>;
+  ecrRepositories?(): Promise<DiscoveredEcrRepository[]>;
+  autoScalingGroups?(): Promise<DiscoveredAutoScalingGroup[]>;
+  launchTemplates?(): Promise<DiscoveredLaunchTemplate[]>;
+  fileSystems?(): Promise<DiscoveredFileSystem[]>;
+  /** Global. */
+  cloudFrontDistributions?(): Promise<DiscoveredDistribution[]>;
+  restApis?(): Promise<DiscoveredRestApi[]>;
+  dbClusters?(): Promise<DiscoveredDbCluster[]>;
+  dbSnapshots?(): Promise<DiscoveredDbSnapshot[]>;
+  ssmParameters?(): Promise<DiscoveredSsmParameter[]>;
 }
 
 /** Capability names for the optional collectors, keyed by client method. */
@@ -298,4 +548,25 @@ export const OPTIONAL_CAPABILITIES = {
   ebsVolumes: "ec2:volume",
   ebsSnapshots: "ec2:snapshot",
   kmsKeys: "kms:key",
+  routeTables: "ec2:route-table",
+  natGateways: "ec2:nat-gateway",
+  vpcPeerings: "ec2:vpc-peering",
+  vpcEndpoints: "ec2:vpc-endpoint",
+  networkAcls: "ec2:network-acl",
+  loadBalancers: "elbv2:load-balancer",
+  ecsClusters: "ecs:cluster",
+  ecsTaskDefinitions: "ecs:task-definition",
+  eksClusters: "eks:cluster",
+  sqsQueues: "sqs:queue",
+  snsTopics: "sns:topic",
+  dynamoTables: "dynamodb:table",
+  ecrRepositories: "ecr:repository",
+  autoScalingGroups: "autoscaling:group",
+  launchTemplates: "ec2:launch-template",
+  fileSystems: "efs:file-system",
+  cloudFrontDistributions: "cloudfront:distribution",
+  restApis: "apigateway:rest-api",
+  dbClusters: "rds:db-cluster",
+  dbSnapshots: "rds:db-snapshot",
+  ssmParameters: "ssm:parameter",
 } as const;

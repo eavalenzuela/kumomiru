@@ -116,7 +116,7 @@ test("FSBP roll-up covers the phase 3 controls", () => {
     assert.equal(byId.get(id)?.status, "fail", id);
   }
   assert.equal(byId.get("Config.1")!.status, "pass");
-  assert.equal(byId.get("ELB.1")!.status, "not-assessed", "unmapped tranche-B control visible as a gap");
+  assert.equal(byId.get("IAM.6")!.status, "not-assessed", "unmapped control visible as a gap");
   const mapped = [...byId.values()].filter((c) => c.ruleIds.length > 0).length;
   assert.ok(mapped >= 29, `mapped ${mapped}`);
 });

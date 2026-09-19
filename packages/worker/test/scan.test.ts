@@ -270,8 +270,10 @@ test("runScan: the master credentials are scrubbed after the run", async () => {
 });
 
 test("Scheduler.tick: enqueues due active accounts, skips inactive, runs the queue", async () => {
-  const db = openDatabase(":memory:");
+  // The db must share the injected clock: scan.startedAt comes from the db's
+  // clock and isDue compares it against deps.now.
   const { deps } = fakeDeps();
+  const db = openDatabase(":memory:", { now: () => deps.now() });
   db.accounts.upsert({ ...ACCOUNT, status: "active", scheduleCron: "0 * * * *" });
   db.accounts.upsert({ ...ACCOUNT, id: "210987654321", name: "dev", status: "pending" });
   const s = new Scheduler(db, deps, { log: silentLogger });

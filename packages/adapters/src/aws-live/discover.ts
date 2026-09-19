@@ -13,6 +13,13 @@ import { collectServerless } from "./collectors/serverless.js";
 import { collectStorage } from "./collectors/storage.js";
 import { collectSecurity } from "./collectors/security.js";
 import { collectIam } from "./collectors/iam.js";
+import { collectRouting } from "./collectors/routing.js";
+import { collectLoadBalancers } from "./collectors/loadbalancers.js";
+import { collectContainers } from "./collectors/containers.js";
+import { collectMessaging } from "./collectors/messaging.js";
+import { collectData } from "./collectors/data.js";
+import { collectScaling } from "./collectors/scaling.js";
+import { collectEdgeGlobal, collectEdgeRegional } from "./collectors/edge.js";
 
 const SOURCE = "aws-live";
 
@@ -42,6 +49,7 @@ const REGIONAL_BASE = [
 const GLOBAL_CAPS = new Set<string>([
   "iam:role", "iam:user",
   OPTIONAL_CAPABILITIES.accountSummary, OPTIONAL_CAPABILITIES.credentialReport, OPTIONAL_CAPABILITIES.cloudTrails,
+  OPTIONAL_CAPABILITIES.cloudFrontDistributions,
 ]);
 
 /**
@@ -103,7 +111,10 @@ export async function discoverGraph(
     nodes: [],
     edges: [],
     findings: [],
-    index: { vpc: new Map(), subnet: new Map(), sg: new Map(), instance: new Map(), kmsKey: new Map(), bucket: new Map() },
+    index: {
+      vpc: new Map(), subnet: new Map(), sg: new Map(), instance: new Map(), kmsKey: new Map(), bucket: new Map(),
+      igw: new Map(), nat: new Map(), internet: new Map(),
+    },
     df: { members: [], ingress: [], lambdas: [] },
     principals: [],
     resources: [],
@@ -111,15 +122,23 @@ export async function discoverGraph(
 
   if (doRegional) {
     const internet = await collectNetwork(ctx);
+    await collectRouting(ctx);
     await collectCompute(ctx, internet);
+    await collectScaling(ctx);
     await collectDatabase(ctx);
     await collectServerless(ctx);
-    // KMS keys before buckets/secrets so encrypted-by edges can resolve.
+    // KMS keys before buckets/secrets/tables so encrypted-by edges can resolve.
     await collectSecurity(ctx);
     await collectStorage(ctx);
+    await collectMessaging(ctx);
+    await collectData(ctx);
+    await collectContainers(ctx);
+    await collectLoadBalancers(ctx);
+    await collectEdgeRegional(ctx);
   }
   if (doGlobal) {
     await collectIam(ctx);
+    await collectEdgeGlobal(ctx);
   }
 
   const { nodes, edges, findings } = ctx;
@@ -225,8 +244,13 @@ function dataflowRelationship(type: string): string {
     case "aws::secretsmanager::secret":
     case "aws::dynamodb::table":
     case "aws::s3::bucket":
+    case "aws::ssm::parameter":
+    case "aws::sqs::queue":
       return "reads-from";
+    case "aws::sns::topic":
+      return "publishes-to";
     case "aws::rds::db-instance":
+    case "aws::rds::db-cluster":
       return "connects-to";
     default:
       return "references";

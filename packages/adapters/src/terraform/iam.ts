@@ -46,6 +46,14 @@ export function buildTerraformIam(
   selfAccount: string,
   accountNode: string,
 ): IamAnalysisResult {
+  return analyzeAssumeRole(buildTerraformPrincipals(state, iamNodes), selfAccount, accountNode);
+}
+
+/** The principal set (roles + users with identity/trust) for both IAM passes. */
+export function buildTerraformPrincipals(
+  state: TfState,
+  iamNodes: TfIamNode[],
+): AnalyzedPrincipal[] {
   // Identity statements keyed by subject name (a role/user may be named by name
   // or raw id in the joining resource).
   const identityByName = new Map<string, PolicyStatement[]>();
@@ -101,7 +109,7 @@ export function buildTerraformIam(
     return { id: n.id, account: n.account, kind: "user" as const, identity };
   });
 
-  return analyzeAssumeRole(principals, selfAccount, accountNode);
+  return principals;
 }
 
 // --- policy-document helpers -------------------------------------------------

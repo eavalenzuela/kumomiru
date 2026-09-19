@@ -6,6 +6,7 @@ import { iamRules } from "./iam.js";
 import { s3Rules } from "./s3.js";
 import { storageEncryptionRules } from "./storage-encryption.js";
 import { auditRules } from "./audit.js";
+import { trancheBRules } from "./tranche-b.js";
 
 export const builtinRules: Rule[] = [
   ...nativeRules,
@@ -15,4 +16,5 @@ export const builtinRules: Rule[] = [
   ...s3Rules,
   ...storageEncryptionRules,
   ...auditRules,
+  ...trancheBRules,
 ];
