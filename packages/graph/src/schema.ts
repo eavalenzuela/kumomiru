@@ -79,6 +79,16 @@ export const GraphMetaSchema = z.object({
   /** What produced it, e.g. "terraform-state" | "aws-live" | "sample". */
   source: z.string(),
   provider: z.literal("aws"),
+  // --- Set by the scheduled-scan pipeline (all optional; ad-hoc graphs and the
+  // sample omit them, and the viewer never depends on them).
+  /** The scanned account, when the graph covers exactly one. */
+  accountId: z.string().optional(),
+  /** Regions the scan covered, when it was a multi-region merge. */
+  regions: z.array(z.string()).optional(),
+  /** Persisted snapshot id, once stored. */
+  snapshotId: z.string().optional(),
+  /** The scan run that produced it, once stored. */
+  scanId: z.string().optional(),
 });
 
 export const GraphSchema = z.object({

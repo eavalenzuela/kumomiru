@@ -12,7 +12,7 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "dev": "pnpm --parallel --filter @kumomiru/server --filter @kumomiru/viewer dev",
-    "policy:gen": "pnpm --filter @kumomiru/server policy:gen"
+    "dev": "pnpm --parallel --filter @kumomiru/server --filter @kumomiru/worker --filter @kumomiru/viewer dev",
+    "policy:gen": "pnpm --filter @kumomiru/aws policy:gen"
   }
 }

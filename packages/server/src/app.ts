@@ -12,9 +12,11 @@ import {
   redactGraph,
   type Graph,
 } from "@kumomiru/graph";
+import type { Database } from "@kumomiru/db";
 import { REDACT_PATHS } from "./redact.js";
 import { registerLiveRoute, wantsRedacted } from "./routes/live.js";
 import { registerPolicyRoute } from "./routes/policy.js";
+import { registerAccountRoutes } from "./routes/accounts.js";
 
 export interface BuildAppOptions {
   /** Pass false in tests to silence logging. */
@@ -26,6 +28,27 @@ export interface BuildAppOptions {
    * SDK-backed client; tests inject a fake so no AWS/credentials are needed.
    */
   discoveryClientFactory?: DiscoveryClientFactory;
+  /**
+   * The shared database (accounts, scans, snapshots). When absent the account
+   * and snapshot routes are not registered and the server behaves as the
+   * stateless ad-hoc mapper it was before Phase 1.
+   */
+  db?: Database;
+  /**
+   * Whether to expose the ad-hoc ingestion routes (`POST /map/terraform`,
+   * `POST /map/live` with pasted credentials). Defaults to on outside
+   * production (`NODE_ENV !== "production"`); the `KUMOMIRU_ADHOC_INGEST`
+   * environment variable overrides it in `server.ts`.
+   */
+  adhocIngest?: boolean;
+}
+
+/** Resolve the ad-hoc flag from an explicit option, else the environment. */
+export function adhocIngestDefault(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = env["KUMOMIRU_ADHOC_INGEST"];
+  if (v === "1" || v === "true") return true;
+  if (v === "0" || v === "false") return false;
+  return env["NODE_ENV"] !== "production";
 }
 
 /**
@@ -57,12 +80,14 @@ export function buildApp(opts: BuildAppOptions = {}): FastifyInstance {
       wantsRedacted(request) ? redactGraph(sampleGraph) : sampleGraph,
   );
 
+  const adhoc = opts.adhocIngest ?? adhocIngestDefault();
+
   /**
    * POST /map/terraform
    * Body: a parsed Terraform state object (the .tfstate JSON).
    * Returns: a normalized Graph. No credentials involved; nothing is stored.
    */
-  app.post("/map/terraform", async (request, reply) => {
+  if (adhoc) app.post("/map/terraform", async (request, reply) => {
     let graph: Graph;
     try {
       graph = terraformAdapter.toGraph(request.body);
@@ -86,8 +111,11 @@ export function buildApp(opts: BuildAppOptions = {}): FastifyInstance {
   });
 
   // POST /map/live — live read-only AWS discovery (in-memory creds, dropped
-  // after the run).
-  registerLiveRoute(app, opts.discoveryClientFactory);
+  // after the run). Ad-hoc only: scheduled scans never take pasted keys.
+  if (adhoc) registerLiveRoute(app, opts.discoveryClientFactory);
+
+  // Accounts, scans, snapshots — the persisted, scheduled path.
+  if (opts.db) registerAccountRoutes(app, opts.db);
 
   // GET /policy/least-privilege — the exact read-only policy a scan role needs.
   registerPolicyRoute(app);

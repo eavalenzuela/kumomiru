@@ -5,12 +5,6 @@ import { fileURLToPath } from "node:url";
 
 import { parseGraph } from "@kumomiru/graph";
 import { buildApp } from "../src/app.js";
-import {
-  LEAST_PRIVILEGE_POLICY,
-  DENIED_ACTION_PREFIXES,
-  deniedActionsPresent,
-  policyActions,
-} from "../src/routes/policy.js";
 
 const tfstate = JSON.parse(
   readFileSync(
@@ -92,27 +86,4 @@ test("GET /policy/least-privilege serves a read-only policy without GetSecretVal
   // The whole point: the scan role cannot read secret values.
   assert.ok(!actions.some((a) => a.toLowerCase().includes("getsecretvalue")));
   await app.close();
-});
-
-test("docs/least-privilege-policy.json matches the in-code policy (run pnpm policy:gen)", () => {
-  const onDisk = JSON.parse(
-    readFileSync(
-      fileURLToPath(
-        new URL("../../../docs/least-privilege-policy.json", import.meta.url),
-      ),
-      "utf8",
-    ),
-  );
-  assert.deepEqual(onDisk, LEAST_PRIVILEGE_POLICY);
-});
-
-test("the scan policy never grants a data-plane read", () => {
-  assert.deepEqual(deniedActionsPresent(), []);
-  // The denylist itself must keep the two original guarantees.
-  assert.ok(DENIED_ACTION_PREFIXES.includes("secretsmanager:GetSecretValue"));
-  assert.ok(DENIED_ACTION_PREFIXES.includes("ssm:GetParameter"));
-  // Every granted action is a Describe/List/Get-metadata style read.
-  for (const a of policyActions()) {
-    assert.match(a, /^[a-z0-9-]+:(Describe|List|Get)[A-Za-z]+$/, a);
-  }
 });

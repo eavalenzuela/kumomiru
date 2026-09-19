@@ -6,6 +6,7 @@ import type { DiscoveryClient } from "./client.js";
 export { CredentialBroker } from "./credentials.js";
 export type { AwsCredentials, CredentialMeta } from "./credentials.js";
 export { discoverGraph } from "./discover.js";
+export type { DiscoverOptions, DiscoverScope } from "./discover.js";
 export type * from "./client.js";
 
 /**

@@ -1,0 +1,38 @@
+{
+  "name": "@kumomiru/aws",
+  "version": "0.0.0",
+  "description": "AWS SDK boundary for kumomiru: read-only discovery client, assume-role, region enumeration, generated least-privilege policy",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --import tsx ./test/*.test.ts",
+    "policy:gen": "tsx ./scripts/gen-policy.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ec2": "^3.1136.0",
+    "@aws-sdk/client-iam": "^3.1136.0",
+    "@aws-sdk/client-lambda": "^3.1136.0",
+    "@aws-sdk/client-rds": "^3.1136.0",
+    "@aws-sdk/client-secrets-manager": "^3.1136.0",
+    "@aws-sdk/client-sts": "^3.1136.0",
+    "@kumomiru/adapters": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3"
+  }
+}

@@ -696,3 +696,36 @@ body,
 .app-state .hint {
   color: var(--muted);
 }
+
+/* Accounts tab (Load data modal) */
+.ds-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ds-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #d9dee7);
+  border-radius: 8px;
+}
+.ds-row-main { min-width: 0; }
+.ds-row-sub { font-size: 12px; opacity: 0.75; margin-top: 2px; }
+.ds-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.ds-badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  margin-left: 4px;
+}
+.ds-badge-active { color: #1a7f37; }
+.ds-badge-pending { color: #9a6700; }
+.ds-badge-inactive { color: #6e7781; }

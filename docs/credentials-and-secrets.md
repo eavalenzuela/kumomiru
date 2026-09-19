@@ -18,6 +18,24 @@ credentials. They are:
 - **Never logged.** Fastify logging redaction (`packages/server/src/redact.ts`)
   censors credential headers and body fields.
 
+### Scheduled scans never take a key at all
+
+The worker (`@kumomiru/worker`) scans registered accounts on a schedule. It
+holds no credential of its own: it uses the **host identity** — an EC2
+instance profile, an EKS IRSA service account, an ECS task role, or a local
+`AWS_PROFILE` — only to call `sts:AssumeRole` on a `KumomiruScanRole` in each
+target account, with an ExternalId. The temporary credentials it gets back are
+borrowed per discovery pass through the same `CredentialBroker`, scrubbed after
+each pass, and the master copy is scrubbed when the scan ends. Nothing about
+them is written to the database; only the resulting graph is.
+
+- Host identity needs [`worker-host-policy.json`](./worker-host-policy.json).
+- Each scan role needs [`scan-role-trust-policy.json`](./scan-role-trust-policy.json)
+  as its trust policy and [`least-privilege-policy.json`](./least-privilege-policy.json)
+  as its permissions.
+- The pasted-credential path (`POST /map/live`) remains for local, one-off use
+  and is disabled by `KUMOMIRU_ADHOC_INGEST=0` or `NODE_ENV=production`.
+
 ### Prefer short-lived STS credentials
 
 Supply a `sessionToken` (STS / assume-role). A leaked memory dump of a temporary
@@ -27,11 +45,14 @@ warning when long-lived keys are used.
 ### Least-privilege policy
 
 Discovery only ever calls the read-only APIs in
-[`least-privilege-policy.json`](./least-privilege-policy.json). Attach that
-policy (or assume a role bearing it) and kumomiru **cannot** mutate anything —
-and, critically, **cannot read secret values**: `secretsmanager:GetSecretValue`
-and `ssm:GetParameter` (decrypt) are deliberately absent. "It cannot read your
-secrets" is enforced by the permission set, not a promise.
+[`least-privilege-policy.json`](./least-privilege-policy.json). That file is
+**generated** from the actions the SDK client declares (`pnpm policy:gen`), and
+a test fails if it drifts. Attach that policy (or assume a role bearing it) and
+kumomiru **cannot** mutate anything — and, critically, **cannot read secret
+values**: `secretsmanager:GetSecretValue` and `ssm:GetParameter` are
+deliberately absent, and a denylist test also forbids `kms:Decrypt`,
+`s3:GetObject`, and `lambda:GetFunction` ("no data-plane reads"). "It cannot
+read your secrets" is enforced by the permission set, not a promise.
 
 ## B. Secrets we *discover* in your environment
 

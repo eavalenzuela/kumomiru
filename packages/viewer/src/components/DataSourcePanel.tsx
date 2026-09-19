@@ -4,11 +4,15 @@ import {
   fetchSample,
   postTerraform,
   postLive,
+  fetchAccounts,
+  fetchAccountLatest,
+  requestScan,
   leastPrivilegePolicyUrl,
   type LiveCredentials,
+  type AccountSummary,
 } from "../lib/api.js";
 
-type Tab = "sample" | "terraform" | "live";
+type Tab = "accounts" | "sample" | "terraform" | "live";
 
 interface DataSourcePanelProps {
   onLoad: (graph: Graph) => void;
@@ -25,9 +29,28 @@ interface DataSourcePanelProps {
  * the request resolves — never written to localStorage, the URL, or logs.
  */
 export function DataSourcePanel({ onLoad, onClose }: DataSourcePanelProps) {
-  const [tab, setTab] = useState<Tab>("terraform");
+  const [tab, setTab] = useState<Tab>("accounts");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Registered accounts (the scheduled, persisted path). Loaded on open and
+  // after a scan request; the server returns 404 for the route when it runs
+  // without a database, which just leaves the list empty.
+  const [accounts, setAccounts] = useState<AccountSummary[] | null>(null);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
+  const loadAccounts = () =>
+    fetchAccounts()
+      .then((a) => {
+        setAccounts(a);
+        setAccountsError(null);
+      })
+      .catch((e) => {
+        setAccounts([]);
+        setAccountsError(e instanceof Error ? e.message : String(e));
+      });
+  useEffect(() => {
+    void loadAccounts();
+  }, []);
 
   // Move focus into the dialog on open and let Escape dismiss it (a11y).
   const modalRef = useRef<HTMLDivElement>(null);
@@ -66,6 +89,17 @@ export function DataSourcePanel({ onLoad, onClose }: DataSourcePanelProps) {
   };
 
   const loadSample = () => run(fetchSample);
+
+  const loadAccount = (id: string) => run(() => fetchAccountLatest(id));
+  const scanAccount = async (id: string, trigger: "manual" | "verify") => {
+    setError(null);
+    try {
+      await requestScan(id, trigger);
+      await loadAccounts();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const loadTerraformText = (text: string) => {
     let parsed: unknown;
@@ -134,6 +168,14 @@ export function DataSourcePanel({ onLoad, onClose }: DataSourcePanelProps) {
         <div className="ds-tabs" role="tablist">
           <button
             role="tab"
+            aria-selected={tab === "accounts"}
+            className={tab === "accounts" ? "active" : ""}
+            onClick={() => setTab("accounts")}
+          >
+            Accounts
+          </button>
+          <button
+            role="tab"
             aria-selected={tab === "terraform"}
             className={tab === "terraform" ? "active" : ""}
             onClick={() => setTab("terraform")}
@@ -159,6 +201,74 @@ export function DataSourcePanel({ onLoad, onClose }: DataSourcePanelProps) {
         </div>
 
         <div className="ds-body">
+          {tab === "accounts" && (
+            <>
+              <p className="ds-note">
+                Accounts the worker scans on a schedule using its own host
+                identity — no keys are ever pasted or stored. Register accounts
+                with <code>POST /accounts</code>; each row loads the latest stored
+                map.
+              </p>
+              {accountsError && (
+                <p className="ds-note">
+                  Accounts are unavailable ({accountsError}). The server is
+                  running without a database, or the worker has not been set up.
+                </p>
+              )}
+              {accounts && accounts.length === 0 && !accountsError && (
+                <p className="ds-note">No accounts registered yet.</p>
+              )}
+              {accounts && accounts.length > 0 && (
+                <ul className="ds-list">
+                  {accounts.map((a) => (
+                    <li key={a.id} className="ds-row">
+                      <div className="ds-row-main">
+                        <strong>{a.name}</strong>{" "}
+                        <code>{a.id}</code>{" "}
+                        <span className={`ds-badge ds-badge-${a.status}`}>
+                          {a.status}
+                        </span>
+                        <div className="ds-row-sub">
+                          {a.latestSnapshot
+                            ? `last map ${new Date(a.latestSnapshot.generatedAt).toLocaleString()} · ${a.latestSnapshot.nodeCount} nodes · ${a.latestSnapshot.findingCount} findings`
+                            : "no map yet"}
+                          {a.activeScan
+                            ? ` · scan ${a.activeScan.status}`
+                            : a.lastScan?.status === "failed" ||
+                                a.lastScan?.status === "partial"
+                              ? ` · last scan ${a.lastScan.status}: ${a.lastScan.error ?? ""}`
+                              : ""}
+                        </div>
+                      </div>
+                      <div className="ds-row-actions">
+                        <button
+                          type="button"
+                          className="ds-primary"
+                          disabled={busy || !a.latestSnapshot}
+                          onClick={() => loadAccount(a.id)}
+                        >
+                          Load map
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy || a.activeScan !== null}
+                          onClick={() =>
+                            scanAccount(
+                              a.id,
+                              a.status === "pending" ? "verify" : "manual",
+                            )
+                          }
+                        >
+                          {a.status === "pending" ? "Verify role" : "Scan now"}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+
           {tab === "terraform" && (
             <>
               <p className="ds-note">

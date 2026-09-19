@@ -1,14 +1,14 @@
 /**
  * Regenerate docs/least-privilege-policy.json from the in-code policy
- * (`LEAST_PRIVILEGE_POLICY` in src/routes/policy.ts). The test suite asserts
- * the file matches, so run this after changing the policy:
+ * (`LEAST_PRIVILEGE_POLICY` in src/policy.ts). The test suite asserts the file
+ * matches, so run this after changing any DISCOVERY_ACTIONS / REGION_ACTIONS:
  *
  *   pnpm policy:gen
  */
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { LEAST_PRIVILEGE_POLICY, deniedActionsPresent } from "../src/routes/policy.js";
+import { LEAST_PRIVILEGE_POLICY, deniedActionsPresent } from "../src/policy.js";
 
 const denied = deniedActionsPresent();
 if (denied.length > 0) {

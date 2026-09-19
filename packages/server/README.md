@@ -20,7 +20,19 @@ logs.
 | GET | `/health` | Liveness check. |
 | GET | `/sample` | The hand-authored sample graph — zero-setup data source for the viewer. |
 | POST | `/map/terraform` | Body = parsed `.tfstate` JSON → normalized `Graph`. `400` on invalid state, `422` if the built graph fails referential integrity. |
-| POST | `/map/live` | Body = `{ accessKeyId, secretAccessKey, sessionToken?, region }` → live read-only AWS discovery → `Graph`. Credentials are used in-memory for one run and scrubbed. `400` invalid body, `422` integrity, `502` discovery failure. |
+| POST | `/map/live` | Body = `{ accessKeyId, secretAccessKey, sessionToken?, region }` → live read-only AWS discovery → `Graph`. Credentials are used in-memory for one run and scrubbed. `400` invalid body, `422` integrity, `502` discovery failure. **Ad-hoc only** (with `/map/terraform`): off when `KUMOMIRU_ADHOC_INGEST=0` or `NODE_ENV=production`. |
+| GET | `/accounts` | Registered accounts with latest snapshot, active scan, last scan. |
+| POST | `/accounts` | Register or update an account: `{ id, name, roleArn, externalId?, regions?, scheduleCron?, status? }`. `201` new, `200` updated, `400` invalid. |
+| GET / DELETE | `/accounts/:id` | One account (with latest snapshot); delete cascades scans and snapshots. |
+| GET | `/accounts/:id/latest` | The most recent stored map. `?redacted=1` strips values. `404 no_snapshot` until a scan completes. |
+| POST | `/accounts/:id/scans` | Queue a scan for the worker: `{ trigger: "manual" \| "verify" }`. `202`; idempotent while one is queued or running. |
+| GET | `/accounts/:id/scans`, `/accounts/:id/snapshots` | History. |
+| GET | `/scans/:id`, `/snapshots/:id`, `/snapshots/:id/graph` | Individual records; the graph route honors `?redacted=1`. |
+| GET | `/policy/least-privilege` | The generated read-only policy for the scan role. |
+
+The account routes exist only when the server is started with a database
+(`KUMOMIRU_DB_PATH`, shared with the worker). Without one it is the stateless
+ad-hoc mapper it was before Phase 1.
 
 The live route's discovery client is injectable (`buildApp({ discoveryClientFactory })`)
 so it can be tested with a fake — no AWS or credentials needed. The real

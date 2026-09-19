@@ -1,0 +1,37 @@
+{
+  "name": "@kumomiru/worker",
+  "version": "0.0.0",
+  "description": "kumomiru scan worker: scheduler + host-identity multi-region discovery into SQLite",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts",
+    "test": "node --test --import tsx ./test/*.test.ts"
+  },
+  "dependencies": {
+    "@kumomiru/adapters": "workspace:*",
+    "@kumomiru/aws": "workspace:*",
+    "@kumomiru/db": "workspace:*",
+    "@kumomiru/graph": "workspace:*",
+    "croner": "^10.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3"
+  }
+}

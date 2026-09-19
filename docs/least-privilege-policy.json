@@ -15,7 +15,8 @@
         "rds:DescribeDBInstances",
         "lambda:ListFunctions",
         "iam:GetAccountAuthorizationDetails",
-        "secretsmanager:ListSecrets"
+        "secretsmanager:ListSecrets",
+        "ec2:DescribeRegions"
       ],
       "Resource": "*"
     }

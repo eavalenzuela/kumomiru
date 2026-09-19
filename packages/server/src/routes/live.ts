@@ -6,7 +6,7 @@ import {
   type DiscoveryClientFactory,
 } from "@kumomiru/adapters";
 import { checkReferentialIntegrity, redactGraph } from "@kumomiru/graph";
-import { makeSdkClient } from "../aws/sdkClient.js";
+import { makeSdkClient } from "@kumomiru/aws";
 import { redactObject } from "../redact.js";
 
 /**

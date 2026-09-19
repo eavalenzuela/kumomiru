@@ -5,6 +5,7 @@ import { parseGraph, checkReferentialIntegrity } from "@kumomiru/graph";
 import {
   runLiveDiscovery,
   discoverGraph,
+  mergeGraphs,
   CredentialBroker,
   type DiscoveryClient,
   type AwsCredentials,
@@ -318,6 +319,54 @@ test("node ids carry the client's partition; default is commercial aws", async (
   const commercial = await discoverGraph(fakeClient());
   const vpc2 = commercial.nodes.find((n) => n.type === "aws::ec2::vpc")!;
   assert.ok(vpc2.id.startsWith("arn:aws:ec2:"), vpc2.id);
+});
+
+test("scope: regional collects resources but no IAM; global collects IAM only", async () => {
+  const regional = await discoverGraph(fakeClient(), { scope: "regional" });
+  assert.ok(regional.nodes.some((n) => n.type === "aws::ec2::instance"));
+  assert.ok(!regional.nodes.some((n) => n.type === "aws::iam::role"));
+  assert.ok(!regional.edges.some((e) => e.lens === "iam"));
+  assert.ok(!regional.findings.some((f) => f.kind === "external-can-assume"));
+  assert.deepEqual(checkReferentialIntegrity(regional), []);
+
+  const global = await discoverGraph(fakeClient(), { scope: "global" });
+  assert.ok(global.nodes.some((n) => n.type === "aws::iam::role"));
+  assert.ok(global.edges.some((e) => e.lens === "iam"));
+  assert.ok(global.findings.some((f) => f.kind === "external-can-assume"));
+  assert.ok(!global.nodes.some((n) => n.type === "aws::ec2::instance"));
+  // No empty region container is synthesized for a global-only pass.
+  assert.ok(!global.nodes.some((n) => n.type === "aws::region"));
+  assert.deepEqual(checkReferentialIntegrity(global), []);
+});
+
+test("mergeGraphs(global + regional...) equals a full single-region discovery", async () => {
+  const full = await discoverGraph(fakeClient());
+  const global = await discoverGraph(fakeClient(), { scope: "global" });
+  const regional = await discoverGraph(fakeClient(), { scope: "regional" });
+  const merged = mergeGraphs([global, regional], {
+    generatedAt: full.meta.generatedAt,
+    source: "aws-live",
+    accountId: ACCOUNT,
+    regions: [REGION],
+  });
+  const ids = (g: { nodes: { id: string }[] }) => g.nodes.map((n) => n.id).sort();
+  assert.deepEqual(ids(merged), ids(full));
+  assert.equal(merged.edges.length, full.edges.length);
+  assert.equal(merged.findings.length, full.findings.length);
+  assert.deepEqual(checkReferentialIntegrity(merged), []);
+  assert.deepEqual(merged.meta.regions, [REGION]);
+  parseGraph(merged);
+
+  // Two regions share one account node; merging must not duplicate it.
+  const second = { ...fakeClient(), region: () => "eu-west-1" };
+  const regional2 = await discoverGraph(second, { scope: "regional" });
+  const two = mergeGraphs([global, regional, regional2], {
+    generatedAt: full.meta.generatedAt,
+    source: "aws-live",
+  });
+  assert.equal(two.nodes.filter((n) => n.type === "aws::account").length, 1);
+  assert.equal(two.nodes.filter((n) => n.type === "aws::region").length, 2);
+  assert.deepEqual(checkReferentialIntegrity(two), []);
 });
 
 test("runLiveDiscovery scrubs credentials after the run", async () => {

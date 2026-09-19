@@ -24,7 +24,8 @@ Guidance for Claude Code when working in this repo.
   calls. Use absolute paths; re-export PATH each call.
 - `@kumomiru/graph` must be **built** (`dist/`) before packages that depend on
   it typecheck/build, since they resolve it via published `dist` types. Build in
-  dependency order: graph → adapters → server.
+  dependency order: graph → adapters → aws → db → worker / server → viewer
+  (`pnpm -r build` does this).
 - `noUnusedLocals`/`noUnusedParameters` are effectively on (strict) — keep
   locals used or prefix intentionally-unused params with `_`.
 
@@ -36,4 +37,12 @@ full design. pnpm monorepo under `packages/`:
 - `@kumomiru/graph` — the normalized graph spine (Zod schema = source of truth;
   types via `z.infer`).
 - `@kumomiru/adapters` — ingestion adapters (terraform-state first).
-- `@kumomiru/server` — Fastify API; never persists credentials.
+- `@kumomiru/aws` — the only place the AWS SDK is used; the least-privilege
+  policy is generated from the actions declared there (`pnpm policy:gen`).
+- `@kumomiru/db` — SQLite behind a repository interface (accounts, scans,
+  snapshots). `:memory:` in tests.
+- `@kumomiru/worker` — scheduler + scan job; assumes a per-account role from
+  the host identity. Never holds a long-lived key.
+- `@kumomiru/server` — Fastify API; never persists credentials. Shares the
+  SQLite file with the worker via `KUMOMIRU_DB_PATH`.
+- `docs/cspm-roadmap.md` — the CSPM conversion plan; Phase 0 and 1 are done.

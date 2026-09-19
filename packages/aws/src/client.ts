@@ -41,12 +41,30 @@ import type {
 } from "@kumomiru/adapters";
 
 /**
- * The real, SDK-backed read-only DiscoveryClient. This is the ONLY place the
- * AWS SDK is used. Every command here is read-only (Describe/List/Get); there is
- * no mutating call, by construction. The client is built from borrowed
- * credentials inside the credential broker's `use` scope and is discarded with
- * them.
+ * The real, SDK-backed read-only DiscoveryClient. Every command here is
+ * read-only (Describe/List/Get); there is no mutating call, by construction.
+ * The client is built from borrowed credentials inside the credential broker's
+ * `use` scope and is discarded with them.
  */
+
+/**
+ * The exact IAM actions `makeSdkClient` calls. The least-privilege policy is
+ * generated from this list (see policy.ts), so a new SDK call must be declared
+ * here or the policy tests fail. Keep it next to the calls.
+ */
+export const DISCOVERY_ACTIONS = [
+  "sts:GetCallerIdentity",
+  "ec2:DescribeVpcs",
+  "ec2:DescribeSubnets",
+  "ec2:DescribeInternetGateways",
+  "ec2:DescribeSecurityGroups",
+  "ec2:DescribeInstances",
+  "ec2:DescribeInstanceAttribute",
+  "rds:DescribeDBInstances",
+  "lambda:ListFunctions",
+  "iam:GetAccountAuthorizationDetails",
+  "secretsmanager:ListSecrets",
+] as const;
 function tagsToRecord(
   tags: Array<{ Key?: string; Value?: string }> | undefined,
 ): Record<string, string> {

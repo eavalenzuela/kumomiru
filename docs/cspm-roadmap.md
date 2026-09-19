@@ -153,7 +153,28 @@ new package exists.
   together; viewer bundle split into app / cytoscape / elk / react / zod
   chunks (app chunk 2.1 MB → 34 KB).
 
-### Phase 1 — Foundation: persistence, worker, host-identity scanning
+### Phase 1 — Foundation: persistence, worker, host-identity scanning (done, 2026-09-19)
+
+Landed as designed below, with these deviations worth knowing:
+
+- Build order is graph → adapters → **aws** → db → worker / server → viewer,
+  because `@kumomiru/aws` implements the `DiscoveryClient` contract that
+  adapters defines (not the other way round as first sketched).
+- The policy is assembled from `DISCOVERY_ACTIONS` (client) and
+  `REGION_ACTIONS` (regions) constants declared next to the SDK calls, which
+  is the "per-collector `requiredActions`" idea in its smallest form.
+- `discoverGraph` takes `scope: "all" | "regional" | "global"` rather than a
+  boolean; the worker runs one `global` pass and one `regional` pass per region.
+- Cron schedules use `croner` (5-field, UTC). Default `0 */6 * * *`.
+- A `verify` scan trigger assumes the role, checks it lands in the registered
+  account, and flips the account to `active`; no discovery.
+- `better-sqlite3` compiled from source on this machine (Node 22). Deployment
+  images need build tools or a Node version with a prebuilt binary.
+- Region-scoped resource ids (`igw-…`, `sg-…`) are used in edge ids without a
+  region prefix; `mergeGraphs` dedupes by id, so a genuine cross-region id
+  collision would drop an edge. AWS ids are random enough that this is
+  theoretical; Phase 3 should prefix edge ids anyway.
+
 
 **Goal.** Unattended, scheduled, multi-region scans of registered accounts,
 persisted as snapshots. The API server serves stored snapshots instead of

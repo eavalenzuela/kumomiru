@@ -10,18 +10,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
-    "test": "node --test --import tsx ./test/*.test.ts",
-    "policy:gen": "tsx ./scripts/gen-policy.ts"
+    "test": "node --test --import tsx ./test/*.test.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-ec2": "^3.1136.0",
-    "@aws-sdk/client-iam": "^3.1136.0",
-    "@aws-sdk/client-lambda": "^3.1136.0",
-    "@aws-sdk/client-rds": "^3.1136.0",
-    "@aws-sdk/client-secrets-manager": "^3.1136.0",
-    "@aws-sdk/client-sts": "^3.1136.0",
     "@kumomiru/adapters": "workspace:*",
+    "@kumomiru/aws": "workspace:*",
+    "@kumomiru/db": "workspace:*",
     "@kumomiru/graph": "workspace:*",
+    "croner": "^10.0.1",
     "fastify": "^5.12.5",
     "zod": "^3.25.76"
   },

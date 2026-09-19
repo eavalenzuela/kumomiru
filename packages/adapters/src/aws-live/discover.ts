@@ -50,9 +50,22 @@ function arnHelpers(partition: string) {
   };
 }
 
+/**
+ * Which slice of the account a single `discoverGraph` call collects.
+ *
+ * - `all` (default): everything, one region — the ad-hoc `/map/live` path.
+ * - `regional`: region-scoped resources only (VPCs, instances, RDS, Lambda,
+ *   secrets, network + dataflow edges). No IAM principals, no IAM pass.
+ * - `global`: IAM roles/users and the assume-role analysis only. IAM is not
+ *   regional, so the scheduled scanner runs this once per account and then
+ *   `mergeGraphs` it with one `regional` graph per region.
+ */
+export type DiscoverScope = "all" | "regional" | "global";
+
 export interface DiscoverOptions {
   /** Clock for `meta.generatedAt`; injectable for deterministic tests. */
   now?: () => Date;
+  scope?: DiscoverScope;
 }
 
 function nameFromTags(tags: Record<string, string>, fallback: string): string {
@@ -90,9 +103,15 @@ export async function discoverGraph(
   const account = await client.accountId();
   const partition = (await client.partition?.()) ?? "aws";
   const region = client.region();
+  const scope: DiscoverScope = opts.scope ?? "all";
+  const doRegional = scope !== "global";
+  const doGlobal = scope !== "regional";
   const arn = arnHelpers(partition);
   const containers = new Containers();
-  const regionId = containers.region(account, region);
+  // A global-only pass must not synthesize a region container it never fills.
+  const regionId = doRegional
+    ? containers.region(account, region)
+    : containers.account(account);
 
   const nodes: CloudNode[] = [];
   const edges: CloudEdge[] = [];
@@ -109,20 +128,21 @@ export async function discoverGraph(
   const dfIngress: DataflowIngress[] = [];
   const dfLambdas: Array<{ id: string; env: Record<string, string> }> = [];
 
-  // --- VPCs ----------------------------------------------------------------
-  for (const vpc of await client.vpcs()) {
-    const id = arn.vpc(account, region, vpc.vpcId);
-    vpcNode.set(vpc.vpcId, id);
-    nodes.push({
-      id,
-      type: "aws::ec2::vpc",
-      name: nameFromTags(vpc.tags, vpc.vpcId),
-      account,
-      region,
-      parent: regionId,
-      tags: vpc.tags,
-      attributes: vpc.cidrBlock ? { cidrBlock: vpc.cidrBlock } : {},
-    });
+  if (doRegional) {
+    // --- VPCs ----------------------------------------------------------------
+    for (const vpc of await client.vpcs()) {
+      const id = arn.vpc(account, region, vpc.vpcId);
+      vpcNode.set(vpc.vpcId, id);
+      nodes.push({
+        id,
+        type: "aws::ec2::vpc",
+        name: nameFromTags(vpc.tags, vpc.vpcId),
+        account,
+        region,
+        parent: regionId,
+        tags: vpc.tags,
+        attributes: vpc.cidrBlock ? { cidrBlock: vpc.cidrBlock } : {},
+      });
   }
 
   // --- Subnets -------------------------------------------------------------
@@ -347,37 +367,40 @@ export async function discoverGraph(
     });
   }
 
-  // --- IAM principals ------------------------------------------------------
-  // Collect roles and users as principal nodes, then hand the assembled set to
-  // the shared assume-role analysis pass (the brain). No edges are computed
-  // inline: that is what keeps IAM correct in one place across every adapter.
-  const accountNode = containers.account(account);
-  const principals: AnalyzedPrincipal[] = [];
+  }
 
-  for (const role of await client.roles()) {
-    const serviceTrust = role.trustedPrincipals.find(
-      (p) => p.type === "service",
-    );
-    nodes.push({
-      id: role.arn,
-      type: "aws::iam::role",
-      name: role.roleName,
-      account,
-      parent: accountNode,
-      tags: role.tags,
-      attributes: serviceTrust ? { trustedService: serviceTrust.value } : {},
-    });
-    principals.push({
-      id: role.arn,
-      account,
-      kind: "role",
-      identity: role.identityStatements ?? [],
-      trust: role.trustedPrincipals.map((p) => ({
-        principalValue: p.value,
-        type: p.type,
-        conditionKeys: p.conditionKeys ?? [],
-      })),
-    });
+  const accountNode = containers.account(account);
+  if (doGlobal) {
+    // --- IAM principals ------------------------------------------------------
+    // Collect roles and users as principal nodes, then hand the assembled set to
+    // the shared assume-role analysis pass (the brain). No edges are computed
+    // inline: that is what keeps IAM correct in one place across every adapter.
+    const principals: AnalyzedPrincipal[] = [];
+
+    for (const role of await client.roles()) {
+      const serviceTrust = role.trustedPrincipals.find(
+        (p) => p.type === "service",
+      );
+      nodes.push({
+        id: role.arn,
+        type: "aws::iam::role",
+        name: role.roleName,
+        account,
+        parent: accountNode,
+        tags: role.tags,
+        attributes: serviceTrust ? { trustedService: serviceTrust.value } : {},
+      });
+      principals.push({
+        id: role.arn,
+        account,
+        kind: "role",
+        identity: role.identityStatements ?? [],
+        trust: role.trustedPrincipals.map((p) => ({
+          principalValue: p.value,
+          type: p.type,
+          conditionKeys: p.conditionKeys ?? [],
+        })),
+      });
   }
 
   for (const user of (await client.users?.()) ?? []) {
@@ -403,6 +426,8 @@ export async function discoverGraph(
   nodes.push(...iam.nodes);
   edges.push(...iam.edges);
   findings.push(...iam.findings);
+
+  }
 
   // --- Dataflow analysis pass (SG reachability + explicit refs) ------------
   // Resolve Lambda env values that name an existing resource into references.

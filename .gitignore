@@ -15,6 +15,11 @@ build/
 *-map.json
 *.kumomiru.json
 
+# Local SQLite database (server + worker share it)
+*.db
+*.db-wal
+*.db-shm
+
 # Logs
 *.log
 npm-debug.log*

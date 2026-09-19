@@ -30,7 +30,10 @@ pnpm monorepo under `packages/`:
 |---|---|
 | [`@kumomiru/graph`](packages/graph) | The normalized graph spine. Zod schema is the source of truth. |
 | [`@kumomiru/adapters`](packages/adapters) | Ingestion: Terraform state and live AWS discovery, plus the IAM and dataflow analysis passes. |
-| [`@kumomiru/server`](packages/server) | Fastify API. Credentials live in memory for one request and are scrubbed. |
+| [`@kumomiru/aws`](packages/aws) | The only place the AWS SDK is used. The least-privilege policy is generated from the actions declared here. |
+| [`@kumomiru/db`](packages/db) | SQLite behind a repository interface: accounts, scans, snapshots. |
+| [`@kumomiru/worker`](packages/worker) | Scheduled scans. Assumes a read-only role in each account from the host's own identity. Never holds a key. |
+| [`@kumomiru/server`](packages/server) | Fastify API. Serves stored snapshots; ad-hoc ingest with pasted credentials is dev-only. |
 | [`@kumomiru/viewer`](packages/viewer) | React + Cytoscape.js map with ELK layered layout. |
 
 ## Run it
@@ -39,25 +42,49 @@ Requirements: Node 22 and pnpm 9.
 
 ```sh
 pnpm install
-pnpm build          # graph → adapters → server → viewer, in dependency order
-pnpm dev            # server on :4000 and viewer on :5173 together
+pnpm build          # all packages, in dependency order
+pnpm dev            # server :4000, worker, and viewer :5173 together
 ```
 
 Open http://localhost:5173. The viewer loads a built-in sample graph with no
-credentials. Use **Load data** to upload a Terraform state file or run a live
-read-only scan of an AWS account.
+credentials. **Load data** offers a Terraform state upload, a one-off live scan
+with pasted credentials (dev only), and the registered accounts.
 
-For a live scan, attach the generated read-only policy to a role and prefer
-short-lived STS credentials:
+### Scheduled scans (the real path)
+
+The worker scans registered accounts on a cron schedule. It never stores a
+key: it uses the identity of the host it runs on (instance profile, IRSA, ECS
+task role, or your `AWS_PROFILE` locally) to assume a read-only role in each
+target account.
+
+1. In each target account, create `KumomiruScanRole` with the trust policy in
+   [`docs/scan-role-trust-policy.json`](docs/scan-role-trust-policy.json) (fill
+   in the worker's role ARN and an ExternalId) and attach the generated
+   read-only policy from [`docs/least-privilege-policy.json`](docs/least-privilege-policy.json).
+2. Give the worker's host identity [`docs/worker-host-policy.json`](docs/worker-host-policy.json).
+3. Register the account and verify the role:
 
 ```sh
-curl -sO http://localhost:4000/policy/least-privilege
+curl -s -X POST localhost:4000/accounts -H 'content-type: application/json' -d '{
+  "id": "123456789012", "name": "prod",
+  "roleArn": "arn:aws:iam::123456789012:role/KumomiruScanRole",
+  "externalId": "choose-something-unguessable",
+  "scheduleCron": "0 */6 * * *"
+}'
+curl -s -X POST localhost:4000/accounts/123456789012/scans -d '{"trigger":"verify"}' -H 'content-type: application/json'
 ```
+
+Once verified the account is `active` and scans run on schedule. The latest
+map is at `GET /accounts/:id/latest` and in the viewer's Accounts tab.
+
+Both processes read the same SQLite file, `KUMOMIRU_DB_PATH` (default
+`./kumomiru.db`). Set `KUMOMIRU_ADHOC_INGEST=0` (or `NODE_ENV=production`) to
+disable the pasted-credential and Terraform-upload routes.
 
 ## Develop
 
 ```sh
-pnpm test           # 70+ tests across graph, adapters, server
+pnpm test           # 100+ tests across graph, adapters, aws, db, worker, server
 pnpm typecheck
 pnpm policy:gen     # regenerate docs/least-privilege-policy.json after changing the policy
 ```

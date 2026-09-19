@@ -67,3 +67,57 @@ export function postTerraform(state: unknown): Promise<Graph> {
 export function postLive(creds: LiveCredentials): Promise<Graph> {
   return postGraph("/map/live", creds);
 }
+
+// --- Persisted accounts (Phase 1) --------------------------------------------
+
+export interface AccountSummary {
+  id: string;
+  name: string;
+  roleArn: string;
+  regions: string[] | null;
+  scheduleCron: string;
+  status: "pending" | "active" | "inactive";
+  latestSnapshot: {
+    id: string;
+    generatedAt: string;
+    nodeCount: number;
+    edgeCount: number;
+    findingCount: number;
+  } | null;
+  activeScan: { id: string; status: string; trigger: string } | null;
+  lastScan: {
+    id: string;
+    status: string;
+    finishedAt: string | null;
+    error: string | null;
+  } | null;
+}
+
+async function getJson<T>(path: string): Promise<T> {
+  const res = await fetch(`/api${path}`);
+  if (!res.ok) throw new Error(`request failed: ${res.status} ${res.statusText}`);
+  return (await res.json()) as T;
+}
+
+/** Registered accounts with their latest snapshot and scan state. */
+export function fetchAccounts(): Promise<AccountSummary[]> {
+  return getJson<AccountSummary[]>("/accounts");
+}
+
+/** The most recent stored map for an account. 404 until a scan completes. */
+export function fetchAccountLatest(accountId: string): Promise<Graph> {
+  return fetchGraph(`/accounts/${encodeURIComponent(accountId)}/latest`);
+}
+
+/** Ask the worker to scan (or verify) an account now. */
+export async function requestScan(
+  accountId: string,
+  trigger: "manual" | "verify" = "manual",
+): Promise<void> {
+  const res = await fetch(`/api/accounts/${encodeURIComponent(accountId)}/scans`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ trigger }),
+  });
+  if (!res.ok) throw new Error(`scan request failed: ${res.status}`);
+}
