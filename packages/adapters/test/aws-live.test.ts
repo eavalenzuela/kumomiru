@@ -283,6 +283,43 @@ test("Lambda-env dataflow ignores a substring hit but matches a delimited name",
   assert.ok(flowFrom(delimFn.id), "delimited name match must draw an edge");
 });
 
+test("meta.generatedAt is the injected clock, not the epoch", async () => {
+  const fixed = new Date("2026-09-19T12:00:00.000Z");
+  const graph = await discoverGraph(fakeClient(), { now: () => fixed });
+  assert.equal(graph.meta.generatedAt, fixed.toISOString());
+  // Default clock is "now", never 1970.
+  const live = await discoverGraph(fakeClient());
+  assert.ok(new Date(live.meta.generatedAt).getFullYear() >= 2026);
+});
+
+test("node ids carry the client's partition; default is commercial aws", async () => {
+  const gov = await discoverGraph({
+    ...fakeClient(),
+    partition: async () => "aws-us-gov",
+  });
+  const vpc = gov.nodes.find((n) => n.type === "aws::ec2::vpc")!;
+  assert.ok(vpc.id.startsWith("arn:aws-us-gov:ec2:"), vpc.id);
+  // Ids the adapter synthesizes (EC2/RDS/Lambda) must follow the partition.
+  // ARNs the cloud returns verbatim (roles, secrets) are passed through as-is.
+  const synthesized = new Set([
+    "aws::ec2::vpc",
+    "aws::ec2::subnet",
+    "aws::ec2::internet-gateway",
+    "aws::ec2::security-group",
+    "aws::ec2::instance",
+    "aws::rds::db-instance",
+    "aws::lambda::function",
+  ]);
+  for (const n of gov.nodes.filter((n) => synthesized.has(n.type))) {
+    assert.ok(n.id.startsWith("arn:aws-us-gov:"), `${n.type} ${n.id}`);
+  }
+  assert.deepEqual(checkReferentialIntegrity(gov), []);
+
+  const commercial = await discoverGraph(fakeClient());
+  const vpc2 = commercial.nodes.find((n) => n.type === "aws::ec2::vpc")!;
+  assert.ok(vpc2.id.startsWith("arn:aws:ec2:"), vpc2.id);
+});
+
 test("runLiveDiscovery scrubs credentials after the run", async () => {
   const creds: AwsCredentials = {
     accessKeyId: "AKIAEXAMPLE",

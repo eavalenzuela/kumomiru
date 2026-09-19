@@ -11,6 +11,8 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "dev": "pnpm --parallel --filter @kumomiru/server --filter @kumomiru/viewer dev",
+    "policy:gen": "pnpm --filter @kumomiru/server policy:gen"
   }
 }

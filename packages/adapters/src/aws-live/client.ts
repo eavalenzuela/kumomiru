@@ -128,6 +128,13 @@ export interface DiscoveredUser {
  */
 export interface DiscoveryClient {
   accountId(): Promise<string>;
+  /**
+   * ARN partition (`aws`, `aws-us-gov`, `aws-cn`). Optional: a client that
+   * omits it is treated as the commercial partition. The live SDK client
+   * derives it from the caller identity so node ids match the real ARNs IAM
+   * returns in GovCloud and China accounts.
+   */
+  partition?(): Promise<string>;
   region(): string;
   vpcs(): Promise<DiscoveredVpc[]>;
   subnets(): Promise<DiscoveredSubnet[]>;

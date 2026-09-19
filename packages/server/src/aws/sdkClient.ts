@@ -6,6 +6,7 @@ import {
   DescribeInternetGatewaysCommand,
   DescribeSecurityGroupsCommand,
   DescribeInstancesCommand,
+  DescribeInstanceAttributeCommand,
 } from "@aws-sdk/client-ec2";
 import { RDSClient, DescribeDBInstancesCommand } from "@aws-sdk/client-rds";
 import { LambdaClient, ListFunctionsCommand } from "@aws-sdk/client-lambda";
@@ -54,6 +55,24 @@ function tagsToRecord(
     if (t.Key) out[t.Key] = t.Value ?? "";
   }
   return out;
+}
+
+const USER_DATA_CONCURRENCY = 8;
+
+/** Run `fn` over `items` with at most `limit` in flight; results discarded. */
+async function mapConcurrent<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const item = items[next++]!;
+      await fn(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
 /**
@@ -108,13 +127,28 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
     return authCache;
   };
 
+  /**
+   * One GetCallerIdentity per run, shared by accountId() and partition(). The
+   * partition is read off the caller's own ARN (`arn:aws-us-gov:sts::...`) so
+   * node ids match the ARNs IAM returns in GovCloud / China accounts.
+   */
+  let identityCache: Promise<{ account: string; partition: string }> | null =
+    null;
+  const identity = () => {
+    if (!identityCache) {
+      identityCache = sts.send(new GetCallerIdentityCommand({})).then((res) => ({
+        account: res.Account ?? "unknown",
+        partition: res.Arn?.split(":")[1] || "aws",
+      }));
+    }
+    return identityCache;
+  };
+
   return {
     region: () => region,
 
-    accountId: async () => {
-      const res = await sts.send(new GetCallerIdentityCommand({}));
-      return res.Account ?? "unknown";
-    },
+    accountId: async () => (await identity()).account,
+    partition: async () => (await identity()).partition,
 
     vpcs: async (): Promise<DiscoveredVpc[]> => {
       const vpcs = await paginate(
@@ -211,13 +245,31 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
             securityGroupIds: (i.SecurityGroups ?? [])
               .map((g) => g.GroupId ?? "")
               .filter(Boolean),
-            // Note: user-data requires a separate DescribeInstanceAttribute
-            // call; omitted here to keep the permission surface minimal. The
-            // sanitization path is exercised when present.
             tags: tagsToRecord(i.Tags),
           });
         }
       }
+      // User-data is the #1 place plaintext secrets hide (DESIGN.md §6B) and
+      // is only returned by a per-instance DescribeInstanceAttribute call. It
+      // is fetched with bounded concurrency; a failure on one instance (for
+      // example the attribute permission missing from an older scan role)
+      // leaves that instance's userData unset rather than failing the scan —
+      // the sanitizer simply has nothing to scan for it.
+      await mapConcurrent(out, USER_DATA_CONCURRENCY, async (inst) => {
+        if (!inst.instanceId) return;
+        try {
+          const attr = await ec2.send(
+            new DescribeInstanceAttributeCommand({
+              InstanceId: inst.instanceId,
+              Attribute: "userData",
+            }),
+          );
+          const b64 = attr.UserData?.Value;
+          if (b64) inst.userData = Buffer.from(b64, "base64").toString("utf8");
+        } catch {
+          // Leave userData undefined; see comment above.
+        }
+      });
       return out;
     },
 

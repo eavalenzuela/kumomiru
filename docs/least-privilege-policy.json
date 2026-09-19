@@ -11,6 +11,7 @@
         "ec2:DescribeInternetGateways",
         "ec2:DescribeSecurityGroups",
         "ec2:DescribeInstances",
+        "ec2:DescribeInstanceAttribute",
         "rds:DescribeDBInstances",
         "lambda:ListFunctions",
         "iam:GetAccountAuthorizationDetails",

@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
-    "test": "node --test --import tsx ./test/*.test.ts"
+    "test": "node --test --import tsx ./test/*.test.ts",
+    "policy:gen": "tsx ./scripts/gen-policy.ts"
   },
   "dependencies": {
     "@aws-sdk/client-ec2": "^3.1136.0",

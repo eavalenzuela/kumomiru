@@ -1,4 +1,10 @@
-import type { CloudNode, CloudEdge, Finding, Graph } from "@kumomiru/graph";
+import {
+  isContainer,
+  type CloudNode,
+  type CloudEdge,
+  type Finding,
+  type Graph,
+} from "@kumomiru/graph";
 import { Containers } from "../common/containers.js";
 import {
   scanText,
@@ -20,21 +26,34 @@ import type { DiscoveryClient } from "./client.js";
 
 const SOURCE = "aws-live";
 
-/** ARN helpers for stable node ids. */
-const vpcArn = (acct: string, region: string, id: string) =>
-  `arn:aws:ec2:${region}:${acct}:vpc/${id}`;
-const subnetArn = (acct: string, region: string, id: string) =>
-  `arn:aws:ec2:${region}:${acct}:subnet/${id}`;
-const igwArn = (acct: string, region: string, id: string) =>
-  `arn:aws:ec2:${region}:${acct}:internet-gateway/${id}`;
-const sgArn = (acct: string, region: string, id: string) =>
-  `arn:aws:ec2:${region}:${acct}:security-group/${id}`;
-const instArn = (acct: string, region: string, id: string) =>
-  `arn:aws:ec2:${region}:${acct}:instance/${id}`;
-const dbArn = (acct: string, region: string, id: string) =>
-  `arn:aws:rds:${region}:${acct}:db:${id}`;
-const fnArn = (acct: string, region: string, id: string) =>
-  `arn:aws:lambda:${region}:${acct}:function:${id}`;
+/**
+ * ARN helpers for stable node ids, bound to the account's partition so ids
+ * match the real ARNs IAM returns (`arn:aws-us-gov:...` in GovCloud, etc.).
+ */
+function arnHelpers(partition: string) {
+  const p = partition;
+  return {
+    vpc: (acct: string, region: string, id: string) =>
+      `arn:${p}:ec2:${region}:${acct}:vpc/${id}`,
+    subnet: (acct: string, region: string, id: string) =>
+      `arn:${p}:ec2:${region}:${acct}:subnet/${id}`,
+    igw: (acct: string, region: string, id: string) =>
+      `arn:${p}:ec2:${region}:${acct}:internet-gateway/${id}`,
+    sg: (acct: string, region: string, id: string) =>
+      `arn:${p}:ec2:${region}:${acct}:security-group/${id}`,
+    inst: (acct: string, region: string, id: string) =>
+      `arn:${p}:ec2:${region}:${acct}:instance/${id}`,
+    db: (acct: string, region: string, id: string) =>
+      `arn:${p}:rds:${region}:${acct}:db:${id}`,
+    fn: (acct: string, region: string, id: string) =>
+      `arn:${p}:lambda:${region}:${acct}:function:${id}`,
+  };
+}
+
+export interface DiscoverOptions {
+  /** Clock for `meta.generatedAt`; injectable for deterministic tests. */
+  now?: () => Date;
+}
 
 function nameFromTags(tags: Record<string, string>, fallback: string): string {
   return tags["Name"] ?? fallback;
@@ -64,9 +83,14 @@ function isInternetFacing(cidrs: string[]): boolean {
  * and raised as findings. Secrets Manager secrets are listed as nodes; values
  * are never fetched.
  */
-export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
+export async function discoverGraph(
+  client: DiscoveryClient,
+  opts: DiscoverOptions = {},
+): Promise<Graph> {
   const account = await client.accountId();
+  const partition = (await client.partition?.()) ?? "aws";
   const region = client.region();
+  const arn = arnHelpers(partition);
   const containers = new Containers();
   const regionId = containers.region(account, region);
 
@@ -87,7 +111,7 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
 
   // --- VPCs ----------------------------------------------------------------
   for (const vpc of await client.vpcs()) {
-    const id = vpcArn(account, region, vpc.vpcId);
+    const id = arn.vpc(account, region, vpc.vpcId);
     vpcNode.set(vpc.vpcId, id);
     nodes.push({
       id,
@@ -103,7 +127,7 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
 
   // --- Subnets -------------------------------------------------------------
   for (const subnet of await client.subnets()) {
-    const id = subnetArn(account, region, subnet.subnetId);
+    const id = arn.subnet(account, region, subnet.subnetId);
     subnetNode.set(subnet.subnetId, id);
     nodes.push({
       id,
@@ -125,7 +149,7 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
 
   // --- Internet gateways ---------------------------------------------------
   for (const igw of await client.internetGateways()) {
-    const id = igwArn(account, region, igw.internetGatewayId);
+    const id = arn.igw(account, region, igw.internetGatewayId);
     const parent = igw.attachedVpcId
       ? (vpcNode.get(igw.attachedVpcId) ?? regionId)
       : regionId;
@@ -154,7 +178,7 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
   // --- Security groups -----------------------------------------------------
   const sgInternetIngress = new Map<string, { ports: string; cidr: string }>();
   for (const sg of await client.securityGroups()) {
-    const id = sgArn(account, region, sg.groupId);
+    const id = arn.sg(account, region, sg.groupId);
     sgNode.set(sg.groupId, id);
     nodes.push({
       id,
@@ -190,7 +214,7 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
 
   // --- Instances -----------------------------------------------------------
   for (const inst of await client.instances()) {
-    const id = instArn(account, region, inst.instanceId);
+    const id = arn.inst(account, region, inst.instanceId);
     instNode.set(inst.instanceId, id);
     const attributes: Record<string, unknown> = {
       ...(inst.instanceType ? { instanceType: inst.instanceType } : {}),
@@ -260,7 +284,7 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
 
   // --- RDS -----------------------------------------------------------------
   for (const db of await client.dbInstances()) {
-    const id = dbArn(account, region, db.dbInstanceIdentifier);
+    const id = arn.db(account, region, db.dbInstanceIdentifier);
     const parentSubnet = db.subnetIds
       .map((s) => subnetNode.get(s))
       .find((n): n is string => Boolean(n));
@@ -282,7 +306,7 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
 
   // --- Lambda --------------------------------------------------------------
   for (const fn of await client.functions()) {
-    const id = fnArn(account, region, fn.functionName);
+    const id = arn.fn(account, region, fn.functionName);
     const attributes: Record<string, unknown> = {
       ...(fn.runtime ? { runtime: fn.runtime } : {}),
     };
@@ -383,7 +407,7 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
   // --- Dataflow analysis pass (SG reachability + explicit refs) ------------
   // Resolve Lambda env values that name an existing resource into references.
   // The matched value is never stored — only the resulting edge.
-  const refTargets = nodes.filter((n) => !CONTAINER_TYPES.has(n.type));
+  const refTargets = nodes.filter((n) => !isContainer(n.type));
   const references: DataflowReference[] = [];
   for (const lambda of dfLambdas) {
     const seen = new Set<string>();
@@ -434,7 +458,11 @@ export async function discoverGraph(client: DiscoveryClient): Promise<Graph> {
     nodes: [...containers.nodes.values(), ...nodes],
     edges,
     findings,
-    meta: { generatedAt: new Date(0).toISOString(), source: SOURCE, provider: "aws" },
+    meta: {
+      generatedAt: (opts.now?.() ?? new Date()).toISOString(),
+      source: SOURCE,
+      provider: "aws",
+    },
   };
 }
 
@@ -448,14 +476,6 @@ function mentionsToken(haystack: string, token: string): boolean {
   const esc = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(^|[^A-Za-z0-9])${esc}([^A-Za-z0-9]|$)`).test(haystack);
 }
-
-/** Container node types — never dataflow reference targets. */
-const CONTAINER_TYPES = new Set<string>([
-  "aws::account",
-  "aws::region",
-  "aws::ec2::vpc",
-  "aws::ec2::subnet",
-]);
 
 /** Human-readable port (or range) for an SG rule's from/to ports. */
 function portLabel(fromPort?: number, toPort?: number): string {

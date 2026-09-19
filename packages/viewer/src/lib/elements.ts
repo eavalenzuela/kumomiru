@@ -1,17 +1,9 @@
-import type { Graph, Lens, Severity } from "@kumomiru/graph";
+import { isContainer, type Graph, type Lens, type Severity } from "@kumomiru/graph";
 import type { ElementDefinition } from "cytoscape";
 
-/** Node types that act as containers (compound parents), not leaf resources. */
-const CONTAINER_TYPES = new Set([
-  "aws::account",
-  "aws::region",
-  "aws::ec2::vpc",
-  "aws::ec2::subnet",
-]);
-
-export function isContainer(type: string): boolean {
-  return CONTAINER_TYPES.has(type);
-}
+// Container-ness is defined once in @kumomiru/graph so the adapters and the
+// viewer can never disagree about what renders as a compound node.
+export { isContainer };
 
 const EXTERNAL_PRINCIPAL_TYPE = "aws::iam::external-principal";
 

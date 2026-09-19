@@ -7,5 +7,6 @@
 export * from "./schema.js";
 export * from "./types.js";
 export * from "./validate.js";
+export { CONTAINER_TYPES, isContainer } from "./containment.js";
 export { redactGraph } from "./redact.js";
 export { sampleGraph } from "./sample.js";

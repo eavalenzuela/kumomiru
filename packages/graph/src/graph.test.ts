@@ -4,6 +4,19 @@ import assert from "node:assert/strict";
 import { parseGraph, checkReferentialIntegrity } from "./validate.js";
 import { sampleGraph } from "./sample.js";
 import { LENSES } from "./schema.js";
+import { isContainer } from "./containment.js";
+
+test("isContainer agrees with the sample graph's parent relationships", () => {
+  // Every node used as a parent must be a container; leaf types never are.
+  const parents = new Set(sampleGraph.nodes.map((n) => n.parent).filter(Boolean));
+  const byId = new Map(sampleGraph.nodes.map((n) => [n.id, n]));
+  for (const pid of parents) {
+    const p = byId.get(pid!);
+    assert.ok(p && isContainer(p.type), `parent ${pid} should be a container`);
+  }
+  assert.equal(isContainer("aws::ec2::instance"), false);
+  assert.equal(isContainer("aws::ec2::vpc"), true);
+});
 
 test("sample graph passes schema validation", () => {
   // Round-trip through the runtime schema; throws on any mismatch.

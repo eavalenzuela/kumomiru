@@ -125,6 +125,34 @@ suppressions, settings, alert channels, and intent uploads.
 
 Ordered by dependency. The dependency graph is in §8.
 
+### Phase 0 — Groundwork (done, 2026-09-19)
+
+Small, independent fixes that every later phase builds on, landed before any
+new package exists.
+
+- **Clock injection.** `discoverGraph(client, { now })`; live maps no longer
+  claim `generatedAt` of 1970.
+- **One container-type set.** `CONTAINER_TYPES` / `isContainer` exported from
+  `@kumomiru/graph`; adapters and viewer import it instead of each keeping a
+  copy.
+- **User-data on live scans.** The SDK client now calls
+  `DescribeInstanceAttribute` per instance (bounded concurrency, per-instance
+  failure tolerated) so the plaintext-secret sanitizer actually runs on live
+  EC2 user-data. `ec2:DescribeInstanceAttribute` added to the policy.
+- **Partition-aware ARNs.** `DiscoveryClient.partition?()` derived from the
+  caller identity; synthesized node ids use it, so GovCloud and China ids
+  match what IAM returns.
+- **Policy as single source of truth.** `docs/least-privilege-policy.json` is
+  generated from `LEAST_PRIVILEGE_POLICY` (`pnpm policy:gen`); a test fails on
+  drift, and a denylist test fails if any data-plane read
+  (`secretsmanager:GetSecretValue`, `ssm:GetParameter*`, `kms:Decrypt`,
+  `s3:GetObject`, `lambda:GetFunction`) ever appears. Phase 1 replaces the
+  hand-maintained action list with per-collector `requiredActions`; the tests
+  stay.
+- **Housekeeping.** Root `README.md`; root `pnpm dev` runs server and viewer
+  together; viewer bundle split into app / cytoscape / elk / react / zod
+  chunks (app chunk 2.1 MB → 34 KB).
+
 ### Phase 1 — Foundation: persistence, worker, host-identity scanning
 
 **Goal.** Unattended, scheduled, multi-region scans of registered accounts,
@@ -188,21 +216,8 @@ one-shot results.
   `docs/scan-role-trust-policy.json` (trusts the worker host role ARN with an
   `sts:ExternalId` condition).
 
-**Pre-existing defects fixed here** (verified in code):
-
-- `packages/adapters/src/aws-live/discover.ts` hardcodes
-  `generatedAt: new Date(0)`. Clock injection fixes it.
-- `CONTAINER_TYPES` is defined twice, in `discover.ts` and
-  `packages/viewer/src/lib/elements.ts`. It moves to `@kumomiru/graph` as one
-  exported constant.
-- Live discovery never fetches EC2 user-data (the note in `sdkClient.ts` says
-  it needs `DescribeInstanceAttribute`), so the sanitize path is dead on live
-  scans. Add the call.
-- ARN helpers in `discover.ts` hardcode the `arn:aws:` partition. Derive the
-  partition from the caller identity.
-
-**Permissions added to the scan role.** `ec2:DescribeRegions`,
-`ec2:DescribeInstanceAttribute`.
+**Permissions added to the scan role.** `ec2:DescribeRegions`.
+(`ec2:DescribeInstanceAttribute` landed in Phase 0.)
 
 **Schema deltas.** `GraphMeta` gains optional `accountId`, `regions`,
 `snapshotId`, `scanId`. The sample graph and viewer are unaffected.
