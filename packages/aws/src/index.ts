@@ -15,3 +15,5 @@ export {
 export { PHASE3_ACTIONS, PHASE3_CAPABILITIES, parseCredentialReport } from "./collectors.js";
 export { TRANCHE_B_ACTIONS } from "./collectors-b.js";
 export { FEED_ACTIONS } from "./feeds.js";
+export { organizations, ORG_ACTIONS } from "./organizations.js";
+export type { OrganizationsApi, OrgAccount, OrgListing } from "./organizations.js";

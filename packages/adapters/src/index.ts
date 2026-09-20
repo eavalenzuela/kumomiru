@@ -78,6 +78,7 @@ export { OPTIONAL_CAPABILITIES } from "./aws-live/client.js";
 // IAM analysis passes (the shared "brain") + the policy evaluator.
 export { analyzeAssumeRole } from "./analysis/iam.js";
 export { analyzeResourceAccess } from "./analysis/resourceAccess.js";
+export { stitchKnownAccounts } from "./analysis/stitch.js";
 export type { AccessResource, ResourceAccessResult } from "./analysis/resourceAccess.js";
 export { projectPolicyDocument, conditionKeysOf, parsePolicyDoc } from "./common/policy-doc.js";
 export type {

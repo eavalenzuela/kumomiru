@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { openDatabase } from "@kumomiru/db";
 import type { AwsCredentials } from "@kumomiru/adapters";
-import { Scheduler, runScan, silentLogger, syncRuleMetadata, type WorkerDeps } from "../src/index.js";
+import { Scheduler, runScan, runOrgSync, silentLogger, syncRuleMetadata, type WorkerDeps } from "../src/index.js";
 import { fakeClientFactory } from "./fake-client.js";
 
 const ACCOUNT = {
@@ -349,5 +349,83 @@ test("Scheduler.tick: a worker without the lease still drains the queue", async 
   db.scans.enqueue(ACCOUNT.id, "manual");
   const s = new Scheduler(db, deps, { log: silentLogger });
   assert.deepEqual(await s.tick(), { enqueued: 0, ran: 1 });
+  db.close();
+});
+
+test("org sync: registers active member accounts as pending, queues verify, keeps existing settings, never deletes", async () => {
+  const db = openDatabase(":memory:");
+  const now = () => new Date("2026-09-19T12:00:00Z");
+  const organizations = {
+    listAccounts: async () => ({
+      orgId: "o-abc123",
+      managementAccountId: "111111111111",
+      accounts: [
+        { id: "111111111111", name: "management", status: "ACTIVE", ouPath: "Root" },
+        { id: "123456789012", name: "prod", email: "prod@example.com", status: "ACTIVE", ouPath: "Root/Workloads/Prod" },
+        { id: "222222222222", name: "closed", status: "SUSPENDED", ouPath: "Root/Suspended" },
+      ],
+    }),
+  };
+  // Disabled → no-op.
+  assert.equal(await runOrgSync(db, { organizations, region: "us-east-1", now }, silentLogger), null);
+
+  db.settings.set("org.sync.enabled", true);
+  db.accounts.upsert({ ...ACCOUNT, status: "active", scheduleCron: "0 1 * * *", externalId: "manual-ext" });
+  const r = await runOrgSync(db, { organizations, region: "us-east-1", now }, silentLogger);
+  assert.deepEqual(r, { discovered: 3, registered: 2, verifyQueued: 1 });
+
+  const mgmt = db.accounts.get("111111111111")!;
+  assert.equal(mgmt.status, "pending");
+  assert.equal(mgmt.onboarding, "organizations");
+  assert.equal(mgmt.roleArn, "arn:aws:iam::111111111111:role/KumomiruScanRole");
+  assert.equal(mgmt.externalId, db.settings.get("org.externalId"));
+  assert.equal(mgmt.orgId, "o-abc123");
+  assert.equal(db.scans.active("111111111111")!.trigger, "verify");
+
+  const prod = db.accounts.get(ACCOUNT.id)!;
+  assert.equal(prod.status, "active", "existing status kept");
+  assert.equal(prod.scheduleCron, "0 1 * * *", "existing schedule kept");
+  assert.equal(prod.externalId, "manual-ext", "existing external id kept");
+  assert.equal(prod.ouPath, "Root/Workloads/Prod");
+  assert.equal(prod.email, "prod@example.com");
+  assert.equal(db.scans.active(ACCOUNT.id), null, "active accounts are not re-verified");
+  assert.equal(db.accounts.get("222222222222"), null, "suspended accounts skipped");
+  assert.equal(db.settings.get("org.sync.orgId"), "o-abc123");
+  assert.equal(db.settings.get("org.sync.lastError"), null);
+
+  // Failure is recorded, not thrown.
+  const failing = { listAccounts: async () => { throw Object.assign(new Error("not in an organization"), { name: "AWSOrganizationsNotInUseException" }); } };
+  await runOrgSync(db, { organizations: failing, region: "us-east-1", now }, silentLogger);
+  assert.match(db.settings.get<string>("org.sync.lastError")!, /AWSOrganizationsNotInUseException/);
+
+  // Scheduler runs it under the lease, at most once per interval: the failed
+  // run just stamped lastRun, so a tick now must NOT re-run it ...
+  const { deps } = fakeDeps({ organizations, orgSyncEveryMs: 3_600_000, now });
+  const s = new Scheduler(db, deps, { log: silentLogger });
+  await s.tick();
+  assert.match(db.settings.get<string>("org.sync.lastError")!, /NotInUse/, "within the interval: no re-run");
+  // ... but two hours later it does, and the good listing clears the error.
+  deps.now = () => new Date("2026-09-19T14:00:00Z");
+  await s.tick();
+  assert.equal(db.settings.get("org.sync.lastError"), null);
+  assert.equal(db.settings.get("org.sync.lastRun"), "2026-09-19T14:00:00.000Z");
+  s.stop();
+  db.close();
+});
+
+test("scan: a trusted sibling that is registered is stitched as a known account", async () => {
+  const db = openDatabase(":memory:");
+  db.accounts.upsert({ ...ACCOUNT, status: "active", regions: ["us-east-1"] });
+  db.accounts.upsert({ ...ACCOUNT, id: "999988887777", name: "sibling", roleArn: "arn:aws:iam::999988887777:role/KumomiruScanRole", status: "active" });
+  const { deps } = fakeDeps();
+  db.scans.enqueue(ACCOUNT.id, "manual");
+  const scan = db.scans.claimNext("w-test")!;
+  await runScan(scan, db.accounts.get(ACCOUNT.id)!, db, deps, silentLogger);
+  const g = db.snapshots.getGraph(db.snapshots.latestForAccount(ACCOUNT.id)!.id)!;
+  const ext = g.nodes.find((n) => n.type === "aws::iam::external-principal")!;
+  assert.equal(ext.attributes["knownAccount"], true);
+  const f = db.findings.list({ ruleId: "kumomiru.external-can-assume" })[0]!;
+  assert.equal(f.severity, "high", "critical stepped down to high for in-estate trust");
+  assert.match(f.detail, /registered in kumomiru/);
   db.close();
 });

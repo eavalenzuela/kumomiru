@@ -1,5 +1,5 @@
 import type { AwsCredentials, DiscoveryClientFactory } from "@kumomiru/adapters";
-import type { StsApi } from "@kumomiru/aws";
+import type { OrganizationsApi, StsApi } from "@kumomiru/aws";
 import type { RuleRegistry } from "@kumomiru/rules";
 
 /**
@@ -18,4 +18,8 @@ export interface WorkerDeps {
   registry?: RuleRegistry;
   /** Capabilities the discovery collected; defaults to DISCOVERY_CAPABILITIES. */
   capabilities?: readonly string[];
+  /** Organizations discovery with the host identity; absent → org sync never runs. */
+  organizations?: OrganizationsApi;
+  /** How often to run org sync when enabled; default 1h. */
+  orgSyncEveryMs?: number;
 }

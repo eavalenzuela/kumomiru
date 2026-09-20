@@ -6,8 +6,21 @@ import { parseGraph, type Graph } from "@kumomiru/graph";
  * before it ever reaches the renderer — the same schema the server produced it
  * with, so a drift would fail loudly here.
  */
+/** Thrown when the server wants a login (OIDC is configured and there is no session). */
+export class UnauthenticatedError extends Error {
+  constructor() {
+    super("sign-in required");
+    this.name = "UnauthenticatedError";
+  }
+}
+
+function checkAuth(res: Response): void {
+  if (res.status === 401) throw new UnauthenticatedError();
+}
+
 export async function fetchGraph(path: string): Promise<Graph> {
   const res = await fetch(`/api${path}`);
+  checkAuth(res);
   if (!res.ok) {
     throw new Error(`request failed: ${res.status} ${res.statusText}`);
   }
@@ -40,6 +53,7 @@ async function postGraph(path: string, body: unknown): Promise<Graph> {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+  checkAuth(res);
   if (!res.ok) {
     // Surface the server's message (e.g. invalid state, discovery failed)
     // without assuming a shape.
@@ -95,8 +109,29 @@ export interface AccountSummary {
 
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(`/api${path}`);
+  checkAuth(res);
   if (!res.ok) throw new Error(`request failed: ${res.status} ${res.statusText}`);
   return (await res.json()) as T;
+}
+
+// --- Auth (Phase 5) -----------------------------------------------------------
+
+export interface Me {
+  authEnabled: boolean;
+  user: { id: string; email: string; name: string | null; role: "viewer" | "admin" } | null;
+}
+
+/** Who am I, and is login even a thing on this server? Never throws on 401. */
+export async function fetchMe(): Promise<Me> {
+  const res = await fetch("/api/auth/me");
+  if (!res.ok) return { authEnabled: true, user: null };
+  return (await res.json()) as Me;
+}
+
+export const loginUrl = "/api/auth/login";
+
+export async function logout(): Promise<void> {
+  await fetch("/api/auth/logout", { method: "POST" });
 }
 
 /** Registered accounts with their latest snapshot and scan state. */
@@ -119,5 +154,7 @@ export async function requestScan(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ trigger }),
   });
+  checkAuth(res);
+  if (res.status === 403) throw new Error("admin role required to start a scan");
   if (!res.ok) throw new Error(`scan request failed: ${res.status}`);
 }

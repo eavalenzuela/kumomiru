@@ -14,7 +14,7 @@ const tfstate = JSON.parse(
 );
 
 test("GET /health returns ok", async () => {
-  const app = buildApp({ logger: false });
+  const app = await buildApp({ logger: false });
   const res = await app.inject({ method: "GET", url: "/health" });
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.json(), { status: "ok" });
@@ -22,7 +22,7 @@ test("GET /health returns ok", async () => {
 });
 
 test("GET /sample returns a schema-valid graph", async () => {
-  const app = buildApp({ logger: false });
+  const app = await buildApp({ logger: false });
   const res = await app.inject({ method: "GET", url: "/sample" });
   assert.equal(res.statusCode, 200);
   parseGraph(res.json()); // throws on schema mismatch
@@ -30,7 +30,7 @@ test("GET /sample returns a schema-valid graph", async () => {
 });
 
 test("POST /map/terraform normalizes state into a graph", async () => {
-  const app = buildApp({ logger: false });
+  const app = await buildApp({ logger: false });
   const res = await app.inject({
     method: "POST",
     url: "/map/terraform",
@@ -44,7 +44,7 @@ test("POST /map/terraform normalizes state into a graph", async () => {
 });
 
 test("POST /map/terraform rejects invalid state with 400", async () => {
-  const app = buildApp({ logger: false });
+  const app = await buildApp({ logger: false });
   const res = await app.inject({
     method: "POST",
     url: "/map/terraform",
@@ -56,7 +56,7 @@ test("POST /map/terraform rejects invalid state with 400", async () => {
 });
 
 test("GET /sample?redacted=1 strips data values but preserves topology", async () => {
-  const app = buildApp({ logger: false });
+  const app = await buildApp({ logger: false });
   const full = (await app.inject({ method: "GET", url: "/sample" })).json();
   const red = (
     await app.inject({ method: "GET", url: "/sample?redacted=1" })
@@ -73,7 +73,7 @@ test("GET /sample?redacted=1 strips data values but preserves topology", async (
 });
 
 test("GET /policy/least-privilege serves a read-only policy without GetSecretValue", async () => {
-  const app = buildApp({ logger: false });
+  const app = await buildApp({ logger: false });
   const res = await app.inject({
     method: "GET",
     url: "/policy/least-privilege",

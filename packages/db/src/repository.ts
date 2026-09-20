@@ -32,6 +32,10 @@ export interface AccountRecord {
   scheduleCron: string;
   onboarding: Onboarding;
   status: AccountStatus;
+  /** From Organizations sync, when onboarded that way. */
+  orgId: string | null;
+  ouPath: string | null;
+  email: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -45,6 +49,9 @@ export interface NewAccount {
   scheduleCron?: string;
   onboarding?: Onboarding;
   status?: AccountStatus;
+  orgId?: string | null;
+  ouPath?: string | null;
+  email?: string | null;
 }
 
 export type ScanStatus = "queued" | "running" | "ok" | "partial" | "failed";
@@ -247,7 +254,33 @@ export interface MetadataRepo {
   listControls(framework?: Framework): ControlRecord[];
 }
 
+export type UserRole = "viewer" | "admin";
+
+export interface UserRecord {
+  id: string;
+  email: string;
+  name: string | null;
+  idpSubject: string;
+  idpIssuer: string;
+  role: UserRole;
+  createdAt: string;
+  lastLoginAt: string | null;
+  disabled: boolean;
+}
+
+export interface UserRepo {
+  list(): UserRecord[];
+  get(id: string): UserRecord | null;
+  getByEmail(email: string): UserRecord | null;
+  /** Upsert on login by (issuer, subject); email/name refreshed; role kept unless given. */
+  upsertOnLogin(input: { email: string; name?: string | null; idpSubject: string; idpIssuer: string; role?: UserRole }): UserRecord;
+  setRole(id: string, role: UserRole): boolean;
+  setDisabled(id: string, disabled: boolean): boolean;
+  count(): number;
+}
+
 export interface Database {
+  users: UserRepo;
   accounts: AccountRepo;
   scans: ScanRepo;
   snapshots: SnapshotRepo;

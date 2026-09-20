@@ -4,6 +4,7 @@ import type { Graph } from "@kumomiru/graph";
 
 import { MIGRATIONS } from "./migrations.js";
 import { diffRepo, findingRepo, metadataRepo, ruleResultRepo, suppressionRepo } from "./sqlite-lifecycle.js";
+import { userRepo } from "./sqlite-users.js";
 import type {
   AccountRecord,
   AccountRepo,
@@ -45,6 +46,7 @@ export function openDatabase(path: string, opts: OpenOptions = {}): Database {
   const nowMs = () => (opts.now?.() ?? new Date()).getTime();
 
   return {
+    users: userRepo(db, now),
     accounts: accountRepo(db, now),
     scans: scanRepo(db, now),
     snapshots: snapshotRepo(db, now),
@@ -80,6 +82,9 @@ interface AccountRow {
   schedule_cron: string;
   onboarding: string;
   status: string;
+  org_id: string | null;
+  ou_path: string | null;
+  email: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -94,6 +99,9 @@ function toAccount(r: AccountRow): AccountRecord {
     scheduleCron: r.schedule_cron,
     onboarding: r.onboarding as AccountRecord["onboarding"],
     status: r.status as AccountStatus,
+    orgId: r.org_id ?? null,
+    ouPath: r.ou_path ?? null,
+    email: r.email ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -104,17 +112,20 @@ function accountRepo(db: BetterSqlite3.Database, now: () => string): AccountRepo
   const get = db.prepare("SELECT * FROM accounts WHERE id = ?");
   const insert = db.prepare(`
     INSERT INTO accounts (id, name, role_arn, external_id, regions_json,
-      schedule_cron, onboarding, status, created_at, updated_at)
+      schedule_cron, onboarding, status, org_id, ou_path, email, created_at, updated_at)
     VALUES (@id, @name, @role_arn, @external_id, @regions_json,
-      @schedule_cron, @onboarding, @status, @created_at, @updated_at)
+      @schedule_cron, @onboarding, @status, @org_id, @ou_path, @email, @created_at, @updated_at)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       role_arn = excluded.role_arn,
       external_id = excluded.external_id,
       regions_json = excluded.regions_json,
-      schedule_cron = excluded.schedule_cron,
+      schedule_cron = COALESCE(@schedule_override, accounts.schedule_cron),
       onboarding = excluded.onboarding,
       status = COALESCE(@status_override, accounts.status),
+      org_id = COALESCE(excluded.org_id, accounts.org_id),
+      ou_path = COALESCE(excluded.ou_path, accounts.ou_path),
+      email = COALESCE(excluded.email, accounts.email),
       updated_at = excluded.updated_at
   `);
   const setStatus = db.prepare(
@@ -136,9 +147,13 @@ function accountRepo(db: BetterSqlite3.Database, now: () => string): AccountRepo
         external_id: a.externalId ?? null,
         regions_json: a.regions ? JSON.stringify(a.regions) : null,
         schedule_cron: a.scheduleCron ?? DEFAULT_SCHEDULE,
+        schedule_override: a.scheduleCron ?? null,
         onboarding: a.onboarding ?? "manual",
         status: a.status ?? "pending",
         status_override: a.status ?? null,
+        org_id: a.orgId ?? null,
+        ou_path: a.ouPath ?? null,
+        email: a.email ?? null,
         created_at: ts,
         updated_at: ts,
       });

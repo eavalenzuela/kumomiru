@@ -125,3 +125,33 @@ test("leases: exclusive until expiry, renewable by holder, releasable", () => {
   assert.ok(db.leases.acquire("scheduler", "w3", 10_000));
   db.close();
 });
+
+test("users: upsert on login by issuer+subject, role preserved, admin override, disable", () => {
+  const db = fresh();
+  const a = db.users.upsertOnLogin({ email: "Alice@Example.com", name: "Alice", idpSubject: "sub-1", idpIssuer: "https://idp" });
+  assert.equal(a.email, "alice@example.com");
+  assert.equal(a.role, "viewer");
+  const again = db.users.upsertOnLogin({ email: "alice@example.com", name: "Alice B", idpSubject: "sub-1", idpIssuer: "https://idp" });
+  assert.equal(again.id, a.id);
+  assert.equal(again.name, "Alice B");
+  assert.equal(again.role, "viewer", "role kept when not given");
+  const admin = db.users.upsertOnLogin({ email: "alice@example.com", idpSubject: "sub-1", idpIssuer: "https://idp", role: "admin" });
+  assert.equal(admin.role, "admin");
+  assert.ok(db.users.setRole(a.id, "viewer"));
+  assert.equal(db.users.get(a.id)!.role, "viewer");
+  assert.ok(db.users.setDisabled(a.id, true));
+  assert.equal(db.users.getByEmail("ALICE@example.com")!.disabled, true);
+  assert.equal(db.users.count(), 1);
+  db.close();
+});
+
+test("accounts: organization fields and schedule preservation on sync upsert", () => {
+  const db = fresh();
+  db.accounts.upsert({ ...ACCOUNT, scheduleCron: "0 2 * * *" });
+  const synced = db.accounts.upsert({ ...ACCOUNT, name: "prod (org)", onboarding: "organizations", orgId: "o-abc", ouPath: "Root/Workloads/Prod", email: "root@example.com" });
+  assert.equal(synced.orgId, "o-abc");
+  assert.equal(synced.ouPath, "Root/Workloads/Prod");
+  assert.equal(synced.scheduleCron, "0 2 * * *", "sync without a schedule keeps the operator's");
+  assert.equal(synced.onboarding, "organizations");
+  db.close();
+});

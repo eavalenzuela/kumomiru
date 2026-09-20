@@ -18,6 +18,8 @@ import { registerLiveRoute, wantsRedacted } from "./routes/live.js";
 import { registerPolicyRoute } from "./routes/policy.js";
 import { registerAccountRoutes } from "./routes/accounts.js";
 import { registerFindingRoutes } from "./routes/findings.js";
+import { registerOnboardingRoutes } from "./routes/onboarding.js";
+import { registerAuth, registerNoAuth, type AuthOptions } from "./auth/index.js";
 
 export interface BuildAppOptions {
   /** Pass false in tests to silence logging. */
@@ -42,6 +44,12 @@ export interface BuildAppOptions {
    * environment variable overrides it in `server.ts`.
    */
   adhocIngest?: boolean;
+  /**
+   * OIDC single sign-on. When absent, the server is open (no login, every
+   * caller is anonymous and unrestricted) and `GET /auth/me` says so — fine
+   * for local use; never for a shared deployment. Requires `db`.
+   */
+  auth?: AuthOptions;
 }
 
 /** Resolve the ad-hoc flag from an explicit option, else the environment. */
@@ -61,7 +69,7 @@ export function adhocIngestDefault(env: NodeJS.ProcessEnv = process.env): boolea
  * credentials live only for the duration of one request handler and are dropped
  * when it returns (see the live route, later). Redaction is configured up front.
  */
-export function buildApp(opts: BuildAppOptions = {}): FastifyInstance {
+export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({
     bodyLimit: opts.bodyLimit ?? 25 * 1024 * 1024,
     logger:
@@ -71,6 +79,14 @@ export function buildApp(opts: BuildAppOptions = {}): FastifyInstance {
   });
 
   app.get("/health", async () => ({ status: "ok" }));
+
+  // Auth is registered first so its onRequest guard covers every route below.
+  if (opts.auth) {
+    if (!opts.db) throw new Error("auth requires a database");
+    await registerAuth(app, opts.db, opts.auth);
+  } else {
+    registerNoAuth(app);
+  }
 
   // Zero-setup data source for the viewer: the hand-authored sample graph.
   // `?redacted=1` strips data values (DESIGN.md §6B) via the shared redactGraph,
@@ -120,6 +136,7 @@ export function buildApp(opts: BuildAppOptions = {}): FastifyInstance {
   if (opts.db) {
     registerAccountRoutes(app, opts.db);
     registerFindingRoutes(app, opts.db);
+    registerOnboardingRoutes(app, opts.db);
   }
 
   // GET /policy/least-privilege — the exact read-only policy a scan role needs.

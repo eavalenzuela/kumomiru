@@ -12,14 +12,14 @@ const ACCOUNT = {
   externalId: "ext-1",
 };
 
-function appWithDb() {
+async function appWithDb() {
   const db = openDatabase(":memory:");
-  const app = buildApp({ logger: false, db, adhocIngest: true });
+  const app = await buildApp({ logger: false, db, adhocIngest: true });
   return { app, db, close: async () => { await app.close(); db.close(); } };
 }
 
 test("POST /accounts validates and registers; GET lists with status", async () => {
-  const { app, close } = appWithDb();
+  const { app, close } = await appWithDb();
   let res = await app.inject({ method: "POST", url: "/accounts", payload: ACCOUNT });
   assert.equal(res.statusCode, 201, res.body);
   assert.equal(res.json().status, "pending");
@@ -48,7 +48,7 @@ test("POST /accounts validates and registers; GET lists with status", async () =
 });
 
 test("scan requests are queued once; latest returns 404 until a snapshot exists", async () => {
-  const { app, db, close } = appWithDb();
+  const { app, db, close } = await appWithDb();
   await app.inject({ method: "POST", url: "/accounts", payload: ACCOUNT });
 
   let res = await app.inject({ method: "GET", url: `/accounts/${ACCOUNT.id}/latest` });
@@ -96,7 +96,7 @@ test("scan requests are queued once; latest returns 404 until a snapshot exists"
 
 test("ad-hoc ingest routes disappear when the flag is off", async () => {
   const db = openDatabase(":memory:");
-  const app = buildApp({ logger: false, db, adhocIngest: false });
+  const app = await buildApp({ logger: false, db, adhocIngest: false });
   let res = await app.inject({ method: "POST", url: "/map/terraform", payload: {} });
   assert.equal(res.statusCode, 404);
   res = await app.inject({ method: "POST", url: "/map/live", payload: {} });
@@ -111,7 +111,7 @@ test("ad-hoc ingest routes disappear when the flag is off", async () => {
 });
 
 test("without a db the server is the stateless mapper: no account routes", async () => {
-  const app = buildApp({ logger: false, adhocIngest: true });
+  const app = await buildApp({ logger: false, adhocIngest: true });
   const res = await app.inject({ method: "GET", url: "/accounts" });
   assert.equal(res.statusCode, 404);
   await app.close();

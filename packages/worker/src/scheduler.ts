@@ -2,6 +2,7 @@ import type { Database } from "@kumomiru/db";
 
 import type { WorkerDeps } from "./deps.js";
 import { runScan } from "./jobs/scan.js";
+import { runOrgSync } from "./jobs/orgSync.js";
 import type { Logger } from "./log.js";
 import { isDue } from "./schedule.js";
 
@@ -45,6 +46,14 @@ export class Scheduler {
     let enqueued = 0;
     if (this.#db.leases.acquire(LEASE, this.#deps.workerId, this.#leaseTtlMs)) {
       const now = this.#deps.now();
+      // Organizations sync, at most once per orgSyncEveryMs, only under the lease.
+      if (this.#deps.organizations && this.#db.settings.get<boolean>("org.sync.enabled") === true) {
+        const last = this.#db.settings.get<string>("org.sync.lastRun");
+        const every = this.#deps.orgSyncEveryMs ?? 3_600_000;
+        if (!last || now.getTime() - Date.parse(last) >= every) {
+          await runOrgSync(this.#db, { organizations: this.#deps.organizations, region: this.#deps.stsRegion, now: this.#deps.now }, this.#log);
+        }
+      }
       for (const account of this.#db.accounts.list()) {
         if (account.status !== "active") continue;
         if (this.#db.scans.active(account.id)) continue;

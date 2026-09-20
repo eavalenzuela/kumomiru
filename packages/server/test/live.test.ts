@@ -25,7 +25,7 @@ function fakeClient(): DiscoveryClient {
 }
 
 test("POST /map/live returns a graph using the injected fake client", async () => {
-  const app = buildApp({
+  const app = await buildApp({
     logger: false,
     discoveryClientFactory: () => fakeClient(),
   });
@@ -46,7 +46,7 @@ test("POST /map/live returns a graph using the injected fake client", async () =
 });
 
 test("POST /map/live rejects a body missing credentials with 400", async () => {
-  const app = buildApp({
+  const app = await buildApp({
     logger: false,
     discoveryClientFactory: () => fakeClient(),
   });
@@ -61,7 +61,7 @@ test("POST /map/live rejects a body missing credentials with 400", async () => {
 });
 
 test("POST /map/live surfaces discovery failure as 502 without leaking", async () => {
-  const app = buildApp({
+  const app = await buildApp({
     logger: false,
     discoveryClientFactory: () => {
       throw new Error("boom");

@@ -1,6 +1,6 @@
 import { hostname } from "node:os";
 import { openDatabase } from "@kumomiru/db";
-import { listEnabledRegions, makeSdkClient, sts } from "@kumomiru/aws";
+import { listEnabledRegions, makeSdkClient, organizations, sts } from "@kumomiru/aws";
 
 import { defaultRegistry } from "@kumomiru/rules";
 
@@ -21,6 +21,17 @@ const stsRegion = env["KUMOMIRU_STS_REGION"] ?? "us-east-1";
 const db = openDatabase(dbPath);
 const registry = defaultRegistry();
 syncRuleMetadata(db, registry);
+
+// Record who we are so the server can render the scan-role trust policy and
+// StackSet. Best effort: a worker with no AWS identity still serves as a
+// scheduler for accounts that are already active.
+try {
+  const id = await sts.hostIdentity(stsRegion);
+  db.settings.set("worker.hostIdentity", { ...id, recordedAt: new Date().toISOString() });
+  consoleLogger.info("worker host identity", id);
+} catch (err) {
+  consoleLogger.warn("could not resolve host identity", { error: err instanceof Error ? err.message : String(err) });
+}
 const scheduler = new Scheduler(
   db,
   {
@@ -31,6 +42,7 @@ const scheduler = new Scheduler(
     workerId,
     stsRegion,
     registry,
+    organizations,
   },
   { pollMs, log: consoleLogger },
 );

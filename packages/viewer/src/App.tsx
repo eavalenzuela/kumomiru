@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Core } from "cytoscape";
 import type { Graph, Lens } from "@kumomiru/graph";
 
-import { fetchSample } from "./lib/api.js";
+import { fetchSample, fetchMe, loginUrl, logout, UnauthenticatedError, type Me } from "./lib/api.js";
 import { availableLenses } from "./lib/elements.js";
 import { GraphView } from "./components/GraphView.js";
 import { LensToggle } from "./components/LensToggle.js";
@@ -61,12 +61,24 @@ export function App() {
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState(0);
 
+  // Who is signed in (or whether sign-in exists at all). When the server wants
+  // a login, render the sign-in screen instead of the map.
+  const [me, setMe] = useState<Me | null>(null);
+  const [needsLogin, setNeedsLogin] = useState(false);
   useEffect(() => {
-    fetchSample()
-      .then(setGraph)
-      .catch((err: unknown) =>
-        setError(err instanceof Error ? err.message : String(err)),
-      );
+    fetchMe()
+      .then((m) => {
+        setMe(m);
+        if (m.authEnabled && !m.user) {
+          setNeedsLogin(true);
+          return;
+        }
+        return fetchSample().then(setGraph);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof UnauthenticatedError) setNeedsLogin(true);
+        else setError(err instanceof Error ? err.message : String(err));
+      });
   }, []);
 
   // When a new graph loads, clear stale selection and make sure the active lens
@@ -145,6 +157,20 @@ export function App() {
     return out;
   }, [graph, selected, nodeById]);
 
+  if (needsLogin) {
+    return (
+      <div className="app login-screen">
+        <div className="login-card">
+          <span className="brand">kumomiru</span>
+          <p>Sign in with your organization's identity provider to see the map.</p>
+          <a className="ds-primary login-btn" href={loginUrl}>
+            Sign in
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   if (error) {
     return (
       <div className="app-state">
@@ -187,6 +213,22 @@ export function App() {
             Load data
           </button>
           <Toolbar graph={graph} getCy={getCy} />
+          {me?.authEnabled && me.user && (
+            <span className="user-menu" title={`${me.user.email} (${me.user.role})`}>
+              <span className="user-email">{me.user.email}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  void logout().then(() => {
+                    setMe({ authEnabled: true, user: null });
+                    setNeedsLogin(true);
+                  });
+                }}
+              >
+                Sign out
+              </button>
+            </span>
+          )}
         </div>
       </header>
       {dataSourceOpen && (

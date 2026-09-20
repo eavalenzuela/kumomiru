@@ -16,6 +16,11 @@ export const REDACT_PATHS = [
   'req.body.accessKeyId',
   'req.body.secretAccessKey',
   'req.body.sessionToken',
+  'req.headers.cookie',
+  'res.headers["set-cookie"]',
+  'req.body.code',
+  'req.body.id_token',
+  'req.body.access_token',
 ];
 
 const SENSITIVE_KEY = /(secret|password|token|credential|accesskey|api[_-]?key)/i;

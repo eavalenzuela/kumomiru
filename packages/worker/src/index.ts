@@ -7,3 +7,4 @@ export type { WorkerDeps } from "./deps.js";
 export type { Logger } from "./log.js";
 export { consoleLogger, silentLogger } from "./log.js";
 export { syncRuleMetadata } from "./metadata.js";
+export { runOrgSync, ensureExternalId } from "./jobs/orgSync.js";

@@ -595,7 +595,44 @@ edge exactly like native external access.
 
 ---
 
-### Phase 5 — Auth, RBAC, Organizations onboarding
+### Phase 5 — Auth, RBAC, Organizations onboarding (done, 2026-09-19)
+
+Landed as designed below; see `docs/onboarding.md` for the operator
+checklist. Specifics:
+
+- OIDC via `openid-client` v6 (discovery + PKCE) behind an `OidcProvider`
+  interface so tests use a fake IdP. Sessions are a signed HttpOnly
+  SameSite=Lax cookie holding only the user id and expiry; the user row is
+  loaded per request so role changes and disabling apply immediately. No
+  tokens are stored. Login state (PKCE verifier + state) is a separate
+  10-minute cookie scoped to `/auth`.
+- Guard: everything requires a session except `/health`, `/auth/*`, and
+  `/policy/least-privilege`; mutating methods require `admin`. Without OIDC
+  configured the API is open and `GET /auth/me` says `authEnabled: false`
+  (the viewer then shows no sign-in UI). `buildApp` became async for the
+  cookie plugin.
+- Bootstrap: `KUMOMIRU_ADMIN_EMAILS`; when empty, the first login is admin
+  (logged loudly). `PATCH /users/:id` for role/disable; self-lockout refused.
+- Organizations sync is a worker job under the scheduler lease, hourly,
+  enabled by the `org.sync.enabled` setting (`POST /onboarding/org-sync`).
+  It registers active members as `organizations`-onboarded `pending`
+  accounts with the estate ExternalId and queues a verify; it keeps
+  existing status/schedule/ExternalId and never deletes.
+- `GET /onboarding/stackset.yaml` renders the scan-role CloudFormation
+  template from the generated policy and the worker's recorded host
+  identity (assumed-role ARNs normalized to the role ARN); kumomiru never
+  calls CloudFormation. `?hostRoleArn=` overrides when the worker has not
+  recorded itself.
+- Cross-account stitching (`analysis/stitch.ts`) runs in the scan job with
+  the set of registered account ids: sibling external principals and their
+  edges get `knownAccount: true`, and their external-can-assume /
+  external-can-access findings step down one severity with the account
+  named. Nodes are marked, not replaced — replacing them would need the
+  sibling's snapshot in the same graph, which the per-account model does
+  not have. The viewer's future org-wide view can join on `knownAccount`.
+- Viewer: sign-in gate on 401, user menu with sign-out, 403 surfaced on
+  scan requests.
+
 
 **Goal.** Multi-user access and org-scale onboarding without storing cloud
 keys.

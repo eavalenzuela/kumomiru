@@ -17,7 +17,7 @@ function finding(id: string, over: Partial<Finding> = {}): Finding {
 }
 
 /** A db seeded the way the worker would leave it after one scan. */
-function seeded() {
+async function seeded() {
   const db = openDatabase(":memory:");
   db.accounts.upsert({ ...ACCOUNT, status: "active" });
   const scan = db.scans.enqueue(ACCOUNT.id, "manual");
@@ -33,12 +33,12 @@ function seeded() {
     suppressions: [],
   });
   db.diffs.set(snap.id, { prevSnapshotId: null, nextSnapshotId: snap.id, nodesAdded: [{ id: "x", type: "t" }], nodesRemoved: [], nodesChanged: [], edgesAdded: [], edgesRemoved: [], findingsNew: [], findingsResolved: [] });
-  const app = buildApp({ logger: false, db, adhocIngest: false });
+  const app = await buildApp({ logger: false, db, adhocIngest: false });
   return { app, db, snap, close: async () => { await app.close(); db.close(); } };
 }
 
 test("GET /findings filters by account, status, severity, rule, and control; summary counts", async () => {
-  const { app, close } = seeded();
+  const { app, close } = await seeded();
   let res = await app.inject({ method: "GET", url: "/findings" });
   assert.equal(res.statusCode, 200);
   assert.equal(res.json().length, 2);
@@ -61,7 +61,7 @@ test("GET /findings filters by account, status, severity, rule, and control; sum
 });
 
 test("suppressions: create applies immediately, revoke lifts; unknown rule rejected", async () => {
-  const { app, close } = seeded();
+  const { app, close } = await seeded();
   let res = await app.inject({ method: "POST", url: "/suppressions", payload: { ruleId: "no.such-rule", resourcePattern: "*", reason: "x" } });
   assert.equal(res.statusCode, 400);
   res = await app.inject({ method: "POST", url: "/suppressions", payload: { ruleId: "ec2.sg-unrestricted-ssh", resourcePattern: "sg-*", reason: "bastions are expected" } });
@@ -87,7 +87,7 @@ test("suppressions: create applies immediately, revoke lifts; unknown rule rejec
 });
 
 test("GET /rules and /controls describe the registry and catalogues", async () => {
-  const { app, close } = seeded();
+  const { app, close } = await seeded();
   let res = await app.inject({ method: "GET", url: "/rules" });
   const ssh = res.json().find((r: { id: string }) => r.id === "ec2.sg-unrestricted-ssh");
   assert.ok(ssh);
@@ -105,7 +105,7 @@ test("GET /rules and /controls describe the registry and catalogues", async () =
 });
 
 test("GET /compliance rolls the latest snapshot up per control, overall and per account", async () => {
-  const { app, close } = seeded();
+  const { app, close } = await seeded();
   let res = await app.inject({ method: "GET", url: "/compliance?framework=fsbp" });
   assert.equal(res.statusCode, 200, res.body);
   const body = res.json();
@@ -131,7 +131,7 @@ test("GET /compliance rolls the latest snapshot up per control, overall and per 
 });
 
 test("GET /snapshots/:id/diff returns the stored diff", async () => {
-  const { app, snap, close } = seeded();
+  const { app, snap, close } = await seeded();
   let res = await app.inject({ method: "GET", url: `/snapshots/${snap.id}/diff` });
   assert.equal(res.statusCode, 200);
   assert.equal(res.json().nodesAdded.length, 1);

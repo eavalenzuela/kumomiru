@@ -37,6 +37,10 @@ logs.
 | GET | `/rules`, `/controls?framework=` | The rule registry (severity, controls, remediation) and framework catalogues. |
 | GET | `/compliance?framework=fsbp\|nist-csf-2&accountId=` | Per-control pass/fail/not-assessed from each account's latest snapshot, overall and per account. |
 | GET | `/snapshots/:id/diff` | What changed versus the previous snapshot. |
+| GET | `/auth/login`, `/auth/callback`; POST `/auth/logout`; GET `/auth/me` | OIDC sign-in (when configured). `/auth/me` → `{ authEnabled, user }`. |
+| GET / PATCH | `/users`, `/users/:id` | Admin: list users; set `role` or `disabled`. |
+| GET | `/onboarding`, `/onboarding/stackset.yaml`, `/onboarding/trust-policy.json` | Worker identity, ExternalId, org-sync state; the scan-role CloudFormation template and trust policy. |
+| POST | `/onboarding/org-sync` | Admin: `{ enabled, scanRoleName? }`. |
 
 The account routes exist only when the server is started with a database
 (`KUMOMIRU_DB_PATH`, shared with the worker). Without one it is the stateless

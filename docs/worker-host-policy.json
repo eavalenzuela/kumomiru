@@ -6,6 +6,17 @@
       "Effect": "Allow",
       "Action": "sts:AssumeRole",
       "Resource": "arn:aws:iam::*:role/KumomiruScanRole"
+    },
+    {
+      "Sid": "KumomiruWorkerOrganizationsDiscovery",
+      "Effect": "Allow",
+      "Action": [
+        "organizations:DescribeOrganization",
+        "organizations:ListRoots",
+        "organizations:ListOrganizationalUnitsForParent",
+        "organizations:ListAccountsForParent"
+      ],
+      "Resource": "*"
     }
   ]
 }

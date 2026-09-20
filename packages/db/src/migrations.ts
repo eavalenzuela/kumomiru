@@ -136,4 +136,21 @@ export const MIGRATIONS: readonly string[] = [
     PRIMARY KEY (framework, id)
   );
   `,
+  // 0003_auth_org — users (OIDC), organization columns on accounts
+  `
+  CREATE TABLE users (
+    id            TEXT PRIMARY KEY,
+    email         TEXT NOT NULL UNIQUE,
+    name          TEXT,
+    idp_subject   TEXT NOT NULL,
+    idp_issuer    TEXT NOT NULL,
+    role          TEXT NOT NULL CHECK (role IN ('viewer','admin')),
+    created_at    TEXT NOT NULL,
+    last_login_at TEXT,
+    disabled      INTEGER NOT NULL DEFAULT 0
+  );
+  ALTER TABLE accounts ADD COLUMN org_id TEXT;
+  ALTER TABLE accounts ADD COLUMN ou_path TEXT;
+  ALTER TABLE accounts ADD COLUMN email TEXT;
+  `,
 ];

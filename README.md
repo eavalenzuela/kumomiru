@@ -20,6 +20,7 @@ generates, not by promise.
 | [`DESIGN.md`](DESIGN.md) | The thesis, the graph model, the three lenses, and the credential and secrets pillars. Start here. |
 | [`docs/cspm-roadmap.md`](docs/cspm-roadmap.md) | The plan for converting the mapper into a CSPM: locked decisions and eight dependency-ordered phases. |
 | [`docs/credentials-and-secrets.md`](docs/credentials-and-secrets.md) | How scan credentials are handled and how discovered secrets are redacted. |
+| [`docs/onboarding.md`](docs/onboarding.md) | Operator checklist: worker identity, scan-role StackSet, Organizations sync, single sign-on. |
 | [`IMPROVEMENTS.md`](IMPROVEMENTS.md), [`PLANNED_IMPROVEMENTS.md`](PLANNED_IMPROVEMENTS.md) | Two completed improvement passes, kept as a record. |
 
 ## Layout
@@ -82,6 +83,10 @@ the per-control roll-up at `GET /compliance?framework=fsbp`, and what changed
 at `GET /snapshots/:id/diff`. Where Security Hub or IAM Access Analyzer is
 enabled, their findings are ingested and take precedence for the controls and
 resources they report on; everywhere else the built-in rules decide.
+
+Or enable Organizations sync and let the worker register every member account
+(`docs/onboarding.md`). Set the `KUMOMIRU_OIDC_*` variables for single
+sign-on; without them the API is open.
 
 Both processes read the same SQLite file, `KUMOMIRU_DB_PATH` (default
 `./kumomiru.db`). Set `KUMOMIRU_ADHOC_INGEST=0` (or `NODE_ENV=production`) to

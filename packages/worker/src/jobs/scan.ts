@@ -3,6 +3,7 @@ import {
   DISCOVERY_CAPABILITIES,
   discoverGraph,
   mergeGraphs,
+  stitchKnownAccounts,
   type AwsCredentials,
 } from "@kumomiru/adapters";
 import { checkReferentialIntegrity, diffSnapshots, type Graph } from "@kumomiru/graph";
@@ -75,12 +76,17 @@ export async function runScan(
     }
     const covered = regions.filter((r) => !(r in failed));
 
-    const merged = mergeGraphs(graphs, {
-      generatedAt: deps.now().toISOString(),
-      source: "aws-live",
-      accountId: account.id,
-      regions: covered,
-    });
+    // Cross-account stitching: principals in other *registered* accounts are
+    // siblings, not strangers (docs/cspm-roadmap.md Phase 5).
+    const merged = stitchKnownAccounts(
+      mergeGraphs(graphs, {
+        generatedAt: deps.now().toISOString(),
+        source: "aws-live",
+        accountId: account.id,
+        regions: covered,
+      }),
+      new Set(db.accounts.list().map((a) => a.id)),
+    );
     const problems = checkReferentialIntegrity(merged);
     if (problems.length > 0) {
       db.scans.finish(scan.id, {
