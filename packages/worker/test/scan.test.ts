@@ -135,6 +135,51 @@ test("runScan: rules run on the snapshot; lifecycle opens, holds, and resolves a
   db.close();
 });
 
+test("runScan: Security Hub feed findings persist with lifecycle and supersede the native rule per control", async () => {
+  const db = openDatabase(":memory:");
+  db.accounts.upsert({ ...ACCOUNT, status: "active", regions: ["us-east-1"] });
+  const base = fakeClientFactory();
+  const { deps } = fakeDeps({
+    makeClient: (creds) => ({
+      ...base.factory(creds),
+      securityHubFindings: async () => ({
+        enabled: true,
+        findings: [
+          {
+            id: "arn:aws:securityhub:us-east-1:123456789012:security-control/EC2.13/finding/abc",
+            productName: "Security Hub", title: "SH: SSH open", severityLabel: "HIGH", complianceStatus: "FAILED",
+            securityControlId: "EC2.13", workflowStatus: "NEW",
+            resourceIds: ["arn:aws:ec2:us-east-1:123456789012:security-group/sg-us-east-1"], resourceTypes: ["AwsEc2SecurityGroup"],
+          },
+          { id: "p1", productName: "Security Hub", title: "ok", complianceStatus: "PASSED", securityControlId: "RDS.2", resourceIds: [], resourceTypes: [] },
+        ],
+      }),
+    }),
+  });
+  db.scans.enqueue(ACCOUNT.id, "manual");
+  const scan = db.scans.claimNext("w-test")!;
+  await runScan(scan, db.accounts.get(ACCOUNT.id)!, db, deps, silentLogger);
+  const done = db.scans.get(scan.id)!;
+  assert.equal(done.status, "ok", done.error ?? "");
+  assert.deepEqual(done.stats?.["feeds"], ["securityhub"]);
+  assert.equal(done.stats?.["findingsSuperseded"], 1);
+
+  const feed = db.findings.list({ source: "securityhub" });
+  assert.equal(feed.length, 1);
+  assert.equal(feed[0]!.status, "open");
+  assert.equal(feed[0]!.externalId, "arn:aws:securityhub:us-east-1:123456789012:security-control/EC2.13/finding/abc");
+  assert.ok(!db.findings.list({ ruleId: "ec2.sg-unrestricted-ssh" }).length, "native EC2.13 finding superseded");
+  assert.ok(db.findings.list({ ruleId: "ec2.sg-unrestricted-high-risk-ports" }).length, "other native rules unaffected");
+
+  const snap = db.snapshots.latestForAccount(ACCOUNT.id)!;
+  const rows = db.ruleResults.forSnapshot(snap.id);
+  assert.ok(rows.some((r) => r.ruleId === "securityhub.EC2.13" && r.status === "fail"));
+  assert.ok(rows.some((r) => r.ruleId === "securityhub.RDS.2" && r.status === "pass"));
+  const graph = db.snapshots.getGraph(snap.id)!;
+  assert.deepEqual(graph.meta.securityHubControls, ["EC2.13", "RDS.2"]);
+  db.close();
+});
+
 test("runScan: a suppression in force makes a new finding start suppressed", async () => {
   const db = openDatabase(":memory:");
   db.accounts.upsert({ ...ACCOUNT, status: "active", regions: ["us-east-1"] });

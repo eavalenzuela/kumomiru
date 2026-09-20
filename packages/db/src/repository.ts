@@ -175,6 +175,7 @@ export interface FindingFilter {
   status?: FindingRecord["status"];
   severity?: Severity;
   ruleId?: string;
+  source?: FindingRecord["source"];
   control?: ControlRef;
   limit?: number;
 }

@@ -129,6 +129,13 @@ export const GraphMetaSchema = z.object({
   scanId: z.string().optional(),
   /** Collector capabilities the producer had; drives rule `not-assessed`. */
   capabilities: z.array(z.string()).optional(),
+  /** Managed feeds that were enabled and read: "securityhub", "accessanalyzer". */
+  feeds: z.array(z.string()).optional(),
+  /**
+   * FSBP control ids Security Hub reported on (passed or failed) in this
+   * scan. For these, Security Hub's verdict supersedes the native rule.
+   */
+  securityHubControls: z.array(z.string()).optional(),
 });
 
 export const GraphSchema = z.object({

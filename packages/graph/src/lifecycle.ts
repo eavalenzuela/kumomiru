@@ -46,6 +46,8 @@ export const ControlStatusSchema = z.object({
   notAssessed: z.number().int(),
   ruleIds: z.array(z.string()),
   failingResourceIds: z.array(z.string()),
+  /** Who decided: native rules, or Security Hub when it reported the control. */
+  source: z.enum(["native", "securityhub"]).optional(),
 });
 
 const ChangedNodeSchema = z.object({

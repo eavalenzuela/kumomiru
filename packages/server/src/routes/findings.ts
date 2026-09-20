@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { FRAMEWORKS, SEVERITIES, FINDING_STATUSES, type Framework } from "@kumomiru/graph";
+import { FRAMEWORKS, SEVERITIES, FINDING_STATUSES, FINDING_SOURCES, type Framework } from "@kumomiru/graph";
 import type { Database } from "@kumomiru/db";
 import { CATALOGUES, controlStatuses, defaultRegistry, isCheckRule } from "@kumomiru/rules";
 
@@ -16,6 +16,7 @@ const FindingsQuery = z.object({
   status: z.enum(FINDING_STATUSES).optional(),
   severity: z.enum(SEVERITIES).optional(),
   ruleId: z.string().optional(),
+  source: z.enum(FINDING_SOURCES).optional(),
   framework: z.enum(FRAMEWORKS).optional(),
   control: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(5000).optional(),

@@ -29,7 +29,7 @@ logs.
 | GET | `/accounts/:id/scans`, `/accounts/:id/snapshots` | History. |
 | GET | `/scans/:id`, `/snapshots/:id`, `/snapshots/:id/graph` | Individual records; the graph route honors `?redacted=1`. |
 | GET | `/policy/least-privilege` | The generated read-only policy for the scan role. |
-| GET | `/findings` | Lifecycle findings. Filters: `accountId`, `status` (open/resolved/suppressed), `severity`, `ruleId`, `framework`+`control`, `limit`. Most severe first. |
+| GET | `/findings` | Lifecycle findings. Filters: `accountId`, `status` (open/resolved/suppressed), `severity`, `ruleId`, `source` (native/securityhub/accessanalyzer), `framework`+`control`, `limit`. Most severe first. |
 | GET | `/findings/summary?accountId=` | Open counts by severity. |
 | GET | `/findings/:id` | One finding with first/last seen, resolved/suppressed state. |
 | GET / POST | `/suppressions` | Active suppressions (`?all=1` for revoked/expired too). POST `{ ruleId, resourcePattern, accountId?, reason, expiresAt? }` — applies to open findings immediately. |

@@ -20,6 +20,7 @@ import { collectMessaging } from "./collectors/messaging.js";
 import { collectData } from "./collectors/data.js";
 import { collectScaling } from "./collectors/scaling.js";
 import { collectEdgeGlobal, collectEdgeRegional } from "./collectors/edge.js";
+import { collectFeeds } from "./collectors/feeds.js";
 
 const SOURCE = "aws-live";
 
@@ -161,6 +162,9 @@ export async function discoverGraph(
     findings.push(...access.findings);
   }
 
+  // --- Managed feeds (after native passes, so they can supersede) ----------
+  const feedOutcome = doRegional ? await collectFeeds(ctx) : { feeds: [], securityHubControls: [] };
+
   // --- Dataflow analysis pass (SG reachability + explicit refs) ------------
   const refTargets = nodes.filter((n) => !isContainer(n.type));
   const references: DataflowReference[] = [];
@@ -199,6 +203,8 @@ export async function discoverGraph(
       source: SOURCE,
       provider: "aws",
       capabilities: capabilitiesFor(client, scope),
+      ...(feedOutcome.feeds.length ? { feeds: feedOutcome.feeds } : {}),
+      ...(feedOutcome.securityHubControls.length ? { securityHubControls: feedOutcome.securityHubControls } : {}),
     },
   };
 }

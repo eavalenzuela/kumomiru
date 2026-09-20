@@ -5,7 +5,7 @@
 export type { Rule, CheckRule, AdoptRule, RuleContext, RuleOutcome } from "./types.js";
 export { isCheckRule } from "./types.js";
 export { RuleRegistry, defaultRegistry } from "./registry.js";
-export { evaluate } from "./run.js";
+export { evaluate, SECURITYHUB_COVERAGE_TYPE } from "./run.js";
 export type { EvaluateOptions, Evaluation } from "./run.js";
 export { controlStatuses } from "./compliance.js";
 export { findingId, hashId } from "./ids.js";

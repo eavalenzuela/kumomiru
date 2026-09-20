@@ -65,7 +65,14 @@ export type {
   DiscoveredDbCluster,
   DiscoveredDbSnapshot,
   DiscoveredSsmParameter,
+  AsffFinding,
+  SecurityHubFeed,
+  AccessAnalyzerFinding,
+  AccessAnalyzerFeed,
 } from "./aws-live/client.js";
+// Managed feed mappers (Security Hub ASFF, IAM Access Analyzer).
+export { mapAsffFindings, asffTypeToKumomiru } from "./feeds/asff.js";
+export { mapAccessAnalyzerFindings } from "./feeds/accessanalyzer.js";
 export { OPTIONAL_CAPABILITIES } from "./aws-live/client.js";
 
 // IAM analysis passes (the shared "brain") + the policy evaluator.

@@ -79,7 +79,9 @@ Once verified the account is `active` and scans run on schedule. The latest
 map is at `GET /accounts/:id/latest` and in the viewer's Accounts tab. Every
 scan also runs the posture rules: findings with lifecycle at `GET /findings`,
 the per-control roll-up at `GET /compliance?framework=fsbp`, and what changed
-at `GET /snapshots/:id/diff`.
+at `GET /snapshots/:id/diff`. Where Security Hub or IAM Access Analyzer is
+enabled, their findings are ingested and take precedence for the controls and
+resources they report on; everywhere else the built-in rules decide.
 
 Both processes read the same SQLite file, `KUMOMIRU_DB_PATH` (default
 `./kumomiru.db`). Set `KUMOMIRU_ADHOC_INGEST=0` (or `NODE_ENV=production`) to

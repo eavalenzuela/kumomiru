@@ -209,6 +209,7 @@ export function findingRepo(db: BetterSqlite3.Database): FindingRepo {
       if (filter.status) { where.push("status = ?"); params.push(filter.status); }
       if (filter.severity) { where.push("severity = ?"); params.push(filter.severity); }
       if (filter.ruleId) { where.push("rule_id = ?"); params.push(filter.ruleId); }
+      if (filter.source) { where.push("source = ?"); params.push(filter.source); }
       if (filter.control) {
         // controls_json is a small array; a substring match on the serialized
         // object is exact enough for {"framework":"x","id":"y"} pairs.

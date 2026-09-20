@@ -32,7 +32,7 @@ test("the scan policy never grants a data-plane read", () => {
   // exception is iam:GenerateCredentialReport: it asks IAM to build the
   // credential-metadata CSV (no resource changes, no secrets) and is the only
   // way to obtain it.
-  const READ_SHAPE = /^[a-z0-9-]+:(Describe|List|Get)[A-Za-z]+$/;
+  const READ_SHAPE = /^[a-z0-9-]+:(Describe|List|Get)[A-Za-z0-9]+$/;
   // apigateway:GET is how API Gateway names every read.
   const EXCEPTIONS = new Set(["iam:GenerateCredentialReport", "apigateway:GET"]);
   for (const a of policyActions()) {

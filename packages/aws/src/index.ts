@@ -14,3 +14,4 @@ export {
 } from "./policy.js";
 export { PHASE3_ACTIONS, PHASE3_CAPABILITIES, parseCredentialReport } from "./collectors.js";
 export { TRANCHE_B_ACTIONS } from "./collectors-b.js";
+export { FEED_ACTIONS } from "./feeds.js";

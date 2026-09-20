@@ -60,6 +60,7 @@ import {
   routingCollector,
   scalingCollector,
 } from "./collectors-b.js";
+import { accessAnalyzerCollector, securityHubCollector } from "./feeds.js";
 
 /**
  * The real, SDK-backed read-only DiscoveryClient. Every command here is
@@ -170,6 +171,8 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
   const scaling = scalingCollector(cfg);
   const edge = edgeCollector(cfg);
   const rdsExtra = rdsExtraCollector(cfg);
+  const securityHub = securityHubCollector(cfg);
+  const accessAnalyzer = accessAnalyzerCollector(cfg);
 
   /**
    * GetAccountAuthorizationDetails is the IAM collection backbone (DESIGN.md
@@ -488,6 +491,10 @@ export function makeSdkClient(creds: AwsCredentials): DiscoveryClient {
     restApis: () => edge.restApis(),
     dbClusters: () => rdsExtra.dbClusters(),
     dbSnapshots: () => rdsExtra.dbSnapshots(),
+
+    // --- Managed feeds ----------------------------------------------------------
+    securityHubFindings: () => securityHub.securityHubFindings(),
+    accessAnalyzerFindings: () => accessAnalyzer.accessAnalyzerFindings(),
   };
 }
 

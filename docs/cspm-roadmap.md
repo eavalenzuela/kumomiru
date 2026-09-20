@@ -503,7 +503,47 @@ and 5.
 
 ---
 
-### Phase 4 — Managed feeds: Security Hub and IAM Access Analyzer
+### Phase 4 — Managed feeds: Security Hub and IAM Access Analyzer (done, 2026-09-19)
+
+Landed as designed below. Specifics and deviations:
+
+- Both feeds are optional `DiscoveryClient` methods returning
+  `{ enabled, findings }`; `enabled: false` (service off, or
+  `InvalidAccessException`) is not an error. `meta.feeds` records which were
+  read; `meta.securityHubControls` records the FSBP controls Security Hub
+  reported on (passed or failed).
+- **Security Hub supersedes per control, not per rule.** `evaluate()` turns
+  FAILED control findings into `securityhub.<C>` fail rows and adds one
+  synthetic pass row for every reported control with no failure;
+  `controlStatuses()` uses only feed rows for a control that has them
+  (`source: "securityhub"`) and native rows otherwise (`source: "native"`).
+  Native rule *results* are still computed and stored; a native *finding* is
+  dropped only when Security Hub failed the same control on the same
+  resource, so the stored finding carries the console id. A control with no
+  native rule (IAM.6) becomes assessed the moment Security Hub reports it.
+- GuardDuty / Inspector / Macie findings routed through Security Hub arrive
+  as `securityhub.<product>` findings with no control ref and no roll-up
+  effect. Only `NEW`/`NOTIFIED` workflow states are ingested.
+- **Access Analyzer is authoritative per resource**: its findings replace
+  native `public-resource` / `external-can-access` findings and native
+  external `can-access` edges for every resource it reported on. Archived
+  findings are ignored. `ListFindingsV2` + `GetFindingV2` per finding.
+- Finding ids: `f-sh-<hub id>` and `f-aa-<analyzer id>` — stable per feed
+  finding, never colliding with native ids. Consequence: enabling Security
+  Hub on an account resolves the native finding and opens the feed one
+  (different ids). Documented; a future `replaces`-style link could join
+  them.
+- `GET /findings?source=securityhub|accessanalyzer|native` filters by
+  origin. `ControlStatus.source` says who decided.
+- Policy: `securityhub:DescribeHub`, `securityhub:GetFindings`,
+  `access-analyzer:ListAnalyzers`, `ListFindingsV2`, `GetFindingV2`.
+  (`GetEnabledStandards` / `DescribeStandardsControls` turned out
+  unnecessary: coverage is read off the findings themselves.)
+- Security Hub aggregation regions are not special-cased: each regional
+  pass reads its own region, and `mergeGraphs` unions. An aggregation
+  region therefore reports findings for other regions too; ids dedupe, so
+  nothing doubles.
+
 
 **Goal.** Ingest AWS-computed findings as first-class findings. Fall back to
 native rules where the services are off.

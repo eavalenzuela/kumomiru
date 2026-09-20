@@ -422,6 +422,54 @@ export interface DiscoveredSsmParameter {
   type: string;
 }
 
+// --- Managed feeds (Phase 4) ------------------------------------------------------
+
+/** A Security Hub finding projected from ASFF to what the feed mapper needs. */
+export interface AsffFinding {
+  id: string;
+  productName?: string;
+  generatorId?: string;
+  title: string;
+  description?: string;
+  /** INFORMATIONAL | LOW | MEDIUM | HIGH | CRITICAL */
+  severityLabel?: string;
+  /** PASSED | FAILED | WARNING | NOT_AVAILABLE (control findings only). */
+  complianceStatus?: string;
+  /** e.g. "EC2.13" — the FSBP-style security control id. */
+  securityControlId?: string;
+  resourceIds: string[];
+  resourceTypes: string[];
+  workflowStatus?: string;
+  updatedAt?: string;
+  remediationText?: string;
+  remediationUrl?: string;
+}
+
+export interface SecurityHubFeed {
+  enabled: boolean;
+  findings: AsffFinding[];
+}
+
+/** An IAM Access Analyzer external-access finding (analyzer type ACCOUNT or ORGANIZATION). */
+export interface AccessAnalyzerFinding {
+  id: string;
+  resourceArn: string;
+  resourceType: string;
+  /** Principal that has access: account id, ARN, federated id, or "*" when public. */
+  principal?: string;
+  isPublic: boolean;
+  actions: string[];
+  /** Condition keys on the granting statement, when Access Analyzer reports them. */
+  conditionKeys: string[];
+  status: string;
+  updatedAt?: string;
+}
+
+export interface AccessAnalyzerFeed {
+  enabled: boolean;
+  findings: AccessAnalyzerFinding[];
+}
+
 export interface RegionSettings {
   ebsEncryptionByDefault?: boolean;
   configRecorderEnabled?: boolean;
@@ -536,6 +584,11 @@ export interface DiscoveryClient {
   dbClusters?(): Promise<DiscoveredDbCluster[]>;
   dbSnapshots?(): Promise<DiscoveredDbSnapshot[]>;
   ssmParameters?(): Promise<DiscoveredSsmParameter[]>;
+
+  // --- Managed feeds (regional). `enabled: false` means the service is off in
+  // this account/region; native rules then cover the same controls.
+  securityHubFindings?(): Promise<SecurityHubFeed>;
+  accessAnalyzerFindings?(): Promise<AccessAnalyzerFeed>;
 }
 
 /** Capability names for the optional collectors, keyed by client method. */
@@ -569,4 +622,6 @@ export const OPTIONAL_CAPABILITIES = {
   dbClusters: "rds:db-cluster",
   dbSnapshots: "rds:db-snapshot",
   ssmParameters: "ssm:parameter",
+  securityHubFindings: "securityhub:findings",
+  accessAnalyzerFindings: "accessanalyzer:findings",
 } as const;

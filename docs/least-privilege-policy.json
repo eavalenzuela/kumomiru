@@ -5,6 +5,9 @@
       "Sid": "KumomiruReadOnlyDiscovery",
       "Effect": "Allow",
       "Action": [
+        "access-analyzer:GetFindingV2",
+        "access-analyzer:ListAnalyzers",
+        "access-analyzer:ListFindingsV2",
         "apigateway:GET",
         "autoscaling:DescribeAutoScalingGroups",
         "cloudfront:GetDistributionConfig",
@@ -88,6 +91,8 @@
         "secretsmanager:DescribeSecret",
         "secretsmanager:GetResourcePolicy",
         "secretsmanager:ListSecrets",
+        "securityhub:DescribeHub",
+        "securityhub:GetFindings",
         "sns:GetTopicAttributes",
         "sns:ListTagsForResource",
         "sns:ListTopics",

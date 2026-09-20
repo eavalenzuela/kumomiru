@@ -51,4 +51,4 @@ full design. pnpm monorepo under `packages/`:
   the host identity. Never holds a long-lived key.
 - `@kumomiru/server` — Fastify API; never persists credentials. Shares the
   SQLite file with the worker via `KUMOMIRU_DB_PATH`.
-- `docs/cspm-roadmap.md` — the CSPM conversion plan; Phases 0–3 are done.
+- `docs/cspm-roadmap.md` — the CSPM conversion plan; Phases 0–4 are done.

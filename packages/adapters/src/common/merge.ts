@@ -19,8 +19,12 @@ export function mergeGraphs(
   const edges = new Map<string, Graph["edges"][number]>();
   const findings = new Map<string, Graph["findings"][number]>();
   const capabilities = new Set<string>(meta.capabilities ?? []);
+  const feeds = new Set<string>(meta.feeds ?? []);
+  const shControls = new Set<string>(meta.securityHubControls ?? []);
   for (const g of graphs) {
     for (const c of g.meta.capabilities ?? []) capabilities.add(c);
+    for (const f of g.meta.feeds ?? []) feeds.add(f);
+    for (const c of g.meta.securityHubControls ?? []) shControls.add(c);
     for (const n of g.nodes) if (!nodes.has(n.id)) nodes.set(n.id, n);
     for (const e of g.edges) if (!edges.has(e.id)) edges.set(e.id, e);
     for (const f of g.findings) if (!findings.has(f.id)) findings.set(f.id, f);
@@ -29,6 +33,12 @@ export function mergeGraphs(
     nodes: [...nodes.values()],
     edges: [...edges.values()],
     findings: [...findings.values()],
-    meta: { ...meta, provider: "aws", capabilities: [...capabilities].sort() },
+    meta: {
+      ...meta,
+      provider: "aws",
+      capabilities: [...capabilities].sort(),
+      ...(feeds.size ? { feeds: [...feeds].sort() } : {}),
+      ...(shControls.size ? { securityHubControls: [...shControls].sort() } : {}),
+    },
   };
 }
